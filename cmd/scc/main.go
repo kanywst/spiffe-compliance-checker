@@ -69,7 +69,7 @@ func runID(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "scc id: expected exactly one SPIFFE ID string")
 		return 2
 	}
-	rep := &report.Report{}
+	rep := &report.Report{Subject: "scc id  " + fs.Arg(0)}
 	id.Check(rep, fs.Arg(0))
 	rep.Write(stdout)
 	if rep.Failed() {
@@ -88,7 +88,7 @@ func runX509(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "scc x509-svid: expected exactly one certificate path")
 		return 2
 	}
-	rep := &report.Report{}
+	rep := &report.Report{Subject: "scc x509-svid  " + fs.Arg(0)}
 	if err := x509svid.CheckFile(rep, fs.Arg(0)); err != nil {
 		fmt.Fprintf(stderr, "scc x509-svid: %v\n", err)
 		return 2
@@ -110,7 +110,7 @@ func runJWT(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "scc jwt-svid: expected exactly one token")
 		return 2
 	}
-	rep := &report.Report{}
+	rep := &report.Report{Subject: "scc jwt-svid  <token>"}
 	jwtsvid.Check(rep, fs.Arg(0))
 	rep.Write(stdout)
 	if rep.Failed() {
@@ -129,7 +129,7 @@ func runBundle(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "scc bundle: expected exactly one bundle path")
 		return 2
 	}
-	rep := &report.Report{}
+	rep := &report.Report{Subject: "scc bundle  " + fs.Arg(0)}
 	if err := bundle.CheckFile(rep, fs.Arg(0)); err != nil {
 		fmt.Fprintf(stderr, "scc bundle: %v\n", err)
 		return 2

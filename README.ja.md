@@ -2,15 +2,19 @@
 
 [English](README.md) | **日本語**
 
-SPIFFE 仕様の MUST / MUST NOT 条項を、与えられた artifact (SPIFFE ID 文字列、X.509-SVID 証明書、JWT-SVID トークン、Trust Bundle) に対して機械的にチェックする CLI。失敗時には仕様書名とセクション番号を出すので、そのまま spec 本文に飛んで根拠を確認できる。
+[![ci](https://github.com/0-draft/spiffe-compliance-checker/actions/workflows/ci.yml/badge.svg)](https://github.com/0-draft/spiffe-compliance-checker/actions/workflows/ci.yml)
 
-SPIFFE プロジェクトは公式の conformance suite を提供していない。このツールは「artifact 単位で外から検証できる範囲」をカバーする。実装が workload attestation を正しく行っているか、鍵ローテーションを正しく回しているかなどの「動的な準拠性」は検証範囲外 (それは別問題)。
+[SPIFFE](https://spiffe.io) の artifact を静的に検証する CLI。SPIFFE ID 文字列、X.509-SVID 証明書、JWT-SVID トークン、Trust Bundle のいずれかを `scc` に渡すと、[SPIFFE 仕様](https://github.com/spiffe/spiffe/tree/main/standards) の MUST / MUST NOT 句のうち何が満たされていて何が違反しているかを 1 行ずつ報告する。各行には仕様書名とセクション番号が付くので、落ちた assertion からそのまま仕様本文に飛んで根拠を確認できる。
 
-## なぜ
+SPIFFE は CNCF の仕様セットで、`spiffe://...` 形式の workload identity とそれを運ぶ SVID を定義している。SPIRE、Istio の mTLS、Cilium の mutual auth、社内製の実装などが SPIFFE 準拠を名乗っている。仕様は [spiffe/spiffe](https://github.com/spiffe/spiffe) の 8 本の markdown に分散しているが、公式の conformance suite は存在しない。`scc` はその空白のうち「外から artifact だけ見て検証できる範囲」をカバーする。Workload attestation、鍵ローテーション、Workload API endpoint の振る舞い、特定 bundle に対する署名検証などの動的な側面はスコープ外。
 
-「SPIFFE 準拠」という言い回しは SPIRE / Istio / Cilium / 各社内製実装で頻出するが、何をもって準拠なのかは曖昧なまま使われがち。仕様は `spiffe/spiffe` の 8 本の markdown に散らばっていて、MUST 句は各所に埋め込まれている。1 度読めば理解できる量だが、毎回証明書を渡されるたびに手で確認するのは現実的ではない。
+## インストール
 
-`scc` は仕様の MUST / MUST NOT を直接読み下した assertion を、artifact に対して一発で適用する。
+```bash
+go install github.com/0-draft/spiffe-compliance-checker/cmd/scc@latest
+```
+
+Go 1.26 以降が必要。CLI は色付き出力に [`charm.land/lipgloss/v2`](https://github.com/charmbracelet/lipgloss)、TTY 検出に `golang.org/x/term` を使う。他のランタイム依存なし。
 
 ## 使い方
 
@@ -21,34 +25,47 @@ scc jwt-svid  <token>
 scc bundle    <bundle.json>
 ```
 
-各サブコマンドは assertion 1 件につき 1 行を出力する。1 件でも MUST 句が落ちれば exit code は非ゼロ。
+各サブコマンドは assertion 1 件につき 1 行を出力する。MUST 句が 1 つでも落ちれば exit code は 1、それ以外は 0。SHOULD 違反は `WARN` として表示され exit code には影響しない。色は stdout が TTY かつ `NO_COLOR` が未設定のときだけ ON になるので、script や CI ログでも同じバイナリが安全に使える。
 
 ```text
-$ scc id 'spiffe://Example.com/web-fe'
-FAIL  SPIFFE-ID.md §2.1   trust domain MUST be lowercase
-PASS  SPIFFE-ID.md §2     scheme is "spiffe"
-PASS  SPIFFE-ID.md §2.1   trust domain non-empty
-...
+$ scc id 'spiffe://Example.com/payments/web-fe'
+
+scc id  spiffe://Example.com/payments/web-fe
+
+  ✓ PASS  SPIFFE-ID.md §2    SPIFFE ID MUST NOT include query or fragment
+  ✓ PASS  SPIFFE-ID.md §2    scheme MUST be "spiffe"
+  ✓ PASS  SPIFFE-ID.md §2.1  trust domain MUST NOT be empty
+  ✗ FAIL  SPIFFE-ID.md §2.1  trust domain MUST be lowercase
+         → trust_domain="Example.com"
+  ✗ FAIL  SPIFFE-ID.md §2.1  trust domain MUST contain only [a-z0-9.-_], no percent-encoding
+         → trust_domain="Example.com"
+  ✓ PASS  SPIFFE-ID.md §2.3  trust domain MUST be at most 255 bytes
+  ✓ PASS  SPIFFE-ID.md §2.2  path segments MUST contain only [a-zA-Z0-9.-_]
+  ✓ PASS  SPIFFE-ID.md §2.3  SPIFFE ID MUST be supported up to 2048 bytes
+
+  ────────────────────────────────────
+  11 passed  ·  2 failed  ·  0 warnings
+
+$ echo $?
+1
 ```
 
 ## カバレッジ
 
 | 仕様                                  | `scc` がチェックするもの                                                                            |
 | ------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `SPIFFE-ID.md`                        | scheme、trust domain の charset / 長さ / case、path segment、URI 全長、query/fragment 不在          |
-| `X509-SVID.md`                        | URI SAN 個数、leaf/CA の Basic Constraints、Key Usage critical + 各 flag、EKU、leaf SPIFFE ID 規約  |
-| `JWT-SVID.md`                         | `alg` whitelist、JWS Compact Serialization、`sub`/`aud`/`exp` の存在、`sub` の SPIFFE ID 妥当性     |
-| `SPIFFE_Trust_Domain_and_Bundle.md`   | JWKS shape、key ごとの `kty`/`use`、`spiffe_sequence` / `spiffe_refresh_hint` の型、x509 の `x5c`   |
+| `SPIFFE-ID.md`                        | scheme、trust domain の charset / 長さ / case、path segment、URI 全長、query / fragment 不在        |
+| `X509-SVID.md`                        | URI SAN 個数、leaf / signing の Basic Constraints、Key Usage 各 flag、EKU、leaf SPIFFE ID 規約      |
+| `JWT-SVID.md`                         | `alg` whitelist、JWS Compact Serialization、`sub` / `aud` / `exp` の存在、`sub` の SPIFFE ID 妥当性 |
+| `SPIFFE_Trust_Domain_and_Bundle.md`   | JWKS shape、key ごとの `kty` / `use`、`spiffe_sequence` / `spiffe_refresh_hint`、x509 の `x5c`      |
 
-カバーしないもの: 実際に動いている `Workload API` endpoint の振る舞い (別リポで扱う想定。Agent が必要)、Federation endpoint の信頼関係、特定 Trust Bundle に対する署名検証。1 つ目はロードマップ、残り 2 つは意図的にスコープ外。
+MUST 句は `spiffe/spiffe` main ブランチ 2026-05 時点を出典としている。
 
-## インストール
+## 関連プロジェクト
 
-```bash
-go install github.com/0-draft/spiffe-compliance-checker/cmd/scc@latest
-```
-
-Go 1.22 以降が必要。バイナリは追加ランタイム依存なし。
+- [spiffe/spiffe](https://github.com/spiffe/spiffe) — このツールが検証対象とする仕様セット
+- [spiffe/go-spiffe](https://github.com/spiffe/go-spiffe) — SVID を「形だけ確認する」のではなく「実際に消費する」プロダクションコードで使う Go ライブラリ
+- [spiffe/spire](https://github.com/spiffe/spire) — Workload API の参照実装
 
 ## ライセンス
 

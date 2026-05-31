@@ -1,0 +1,12 @@
+version: "2"
+
+linters:
+  settings:
+    errcheck:
+      # Writes to stdout/stderr in a CLI cannot be meaningfully recovered
+      # from. Excluding fmt.Fprint* avoids littering the code with `_ =`.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - (io.Writer).Write
