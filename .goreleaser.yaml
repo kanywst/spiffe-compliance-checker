@@ -1,0 +1,68 @@
+version: 2
+
+project_name: spiffe-compliance-checker
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: scc
+    main: ./cmd/scc
+    binary: scc
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
+
+archives:
+  - id: default
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats:
+      - tar.gz
+    files:
+      - README.md
+      - README.ja.md
+      - LICENSE
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  use: github-native
+
+release:
+  github:
+    owner: 0-draft
+    name: spiffe-compliance-checker
+  draft: false
+  prerelease: auto
+
+homebrew_casks:
+  - name: spiffe-compliance-checker
+    binaries:
+      - scc
+    repository:
+      owner: kanywst
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: https://github.com/0-draft/spiffe-compliance-checker
+    description: Static MUST-clause compliance checker for SPIFFE artifacts (SPIFFE-ID, X.509-SVID, JWT-SVID, Trust Bundle).
+    license: apache2
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    commit_msg_template: "chore(spiffe-compliance-checker): bump to {{ .Tag }}"
+    directory: Casks

@@ -17,6 +17,14 @@ import (
 	"github.com/0-draft/spiffe-compliance-checker/internal/x509svid"
 )
 
+// Populated at build time by goreleaser via -ldflags. Defaults are sentinels
+// used in `go run` / `go install` builds.
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 const usage = `scc — SPIFFE Compliance Checker
 
 Usage:
@@ -44,6 +52,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	switch cmd {
 	case "-h", "--help", "help":
 		fmt.Fprint(stdout, usage)
+		return 0
+	case "-v", "--version", "version":
+		fmt.Fprintf(stdout, "scc %s (commit %s, built %s)\n", version, commit, date)
 		return 0
 	case "id":
 		return runID(rest, stdout, stderr)

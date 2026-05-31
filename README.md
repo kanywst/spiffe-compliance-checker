@@ -4,17 +4,28 @@
 
 [![ci](https://github.com/0-draft/spiffe-compliance-checker/actions/workflows/ci.yml/badge.svg)](https://github.com/0-draft/spiffe-compliance-checker/actions/workflows/ci.yml)
 
+![demo](./assets/demo.gif)
+
 A static compliance checker for [SPIFFE](https://spiffe.io) artifacts. Pass `scc` a SPIFFE ID, an X.509-SVID certificate, a JWT-SVID token, or a trust bundle, and it tells you which MUST / MUST NOT clauses from the [SPIFFE spec](https://github.com/spiffe/spiffe/tree/main/standards) the artifact satisfies or violates. Every output line cites the source document and section so a failed check reads as a spec walkthrough.
 
 SPIFFE is the CNCF spec set that defines `spiffe://...` workload identities and the SVIDs that carry them. It backs SPIRE, Istio's mTLS layer, Cilium's mutual auth, and many in-house implementations. The spec lives across eight markdown files in [spiffe/spiffe](https://github.com/spiffe/spiffe) and ships without an official conformance suite. `scc` covers the slice of compliance that is checkable from outside: the shape of the artifacts themselves. Runtime concerns (workload attestation, key rotation, Workload API endpoint behaviour, signature verification against a specific bundle) are out of scope.
 
 ## Install
 
+Pick whichever fits your setup. Each one installs the same `scc` binary on PATH.
+
 ```bash
+# Homebrew (macOS + Linux, prebuilt binary)
+brew install kanywst/tap/spiffe-compliance-checker
+
+# go install (any platform with Go 1.26+)
 go install github.com/0-draft/spiffe-compliance-checker/cmd/scc@latest
+
+# Prebuilt archive
+# https://github.com/0-draft/spiffe-compliance-checker/releases
 ```
 
-Requires Go 1.26 or newer. The CLI depends on [`charm.land/lipgloss/v2`](https://github.com/charmbracelet/lipgloss) for colored terminal output and `golang.org/x/term` for TTY detection. No other runtime dependencies.
+The CLI depends on [`charm.land/lipgloss/v2`](https://github.com/charmbracelet/lipgloss) for colored terminal output and `golang.org/x/term` for TTY detection. No other runtime dependencies.
 
 ## Usage
 
