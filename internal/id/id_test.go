@@ -99,6 +99,14 @@ func TestCheck(t *testing.T) {
 			wantFailed:     true,
 			wantContainAny: []string{"trust domain MUST contain only"},
 		},
+		{
+			// Regression: u.Port() is empty for trailing colon, must catch
+			// via HasSuffix on u.Host.
+			name:           "trailing colon in authority",
+			in:             "spiffe://example.com:/foo",
+			wantFailed:     true,
+			wantContainAny: []string{"trailing colon"},
+		},
 	}
 
 	for _, tc := range cases {

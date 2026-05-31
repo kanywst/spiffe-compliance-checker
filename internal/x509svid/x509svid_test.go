@@ -7,8 +7,10 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
+	"encoding/pem"
 	"math/big"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -237,6 +239,59 @@ func TestNilCertIsNoOp(t *testing.T) {
 	x509svid.Check(r, nil)
 	if r.Failed() || len(r.Assertions) != 0 {
 		t.Fatalf("nil cert should be a no-op, got %d assertions", len(r.Assertions))
+	}
+}
+
+func TestSigningWithLeafKeyUsageFails(t *testing.T) {
+	cert := mkCert(t, certOpts{
+		uris:     []*url.URL{mustURI(t, "spiffe://example.com")},
+		isCA:     true,
+		keyUsage: x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
+	})
+	r := &report.Report{}
+	x509svid.Check(r, cert)
+	if !r.Failed() {
+		t.Fatal("expected failure when signing cert sets digitalSignature")
+	}
+	var buf strings.Builder
+	r.Write(&buf)
+	if !strings.Contains(buf.String(), "leaf-only bits") {
+		t.Errorf("expected 'leaf-only bits' in report:\n%s", buf.String())
+	}
+}
+
+func TestParseCertHandlesMultiBlockPEM(t *testing.T) {
+	// Generate a valid leaf and emit a PEM file that has a fake private-key
+	// block first, then the CERTIFICATE block. The old single-block decoder
+	// would have stopped at the first block and failed to parse.
+	cert := mkCert(t, certOpts{
+		uris:     []*url.URL{mustURI(t, "spiffe://example.com/a")},
+		isCA:     false,
+		keyUsage: x509.KeyUsageDigitalSignature,
+		extKeyUsage: []x509.ExtKeyUsage{
+			x509.ExtKeyUsageServerAuth,
+			x509.ExtKeyUsageClientAuth,
+		},
+	})
+	var buf strings.Builder
+	buf.WriteString("-----BEGIN PRIVATE KEY-----\n")
+	buf.WriteString("MIIBOgIBAAJBAKj34GkxFhD90vcNLYLInFEX6Ppy1tPf9Cnzj4p4WGeKLs1Pt8Qu\n")
+	buf.WriteString("-----END PRIVATE KEY-----\n")
+	if err := pem.Encode(&buf, &pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw}); err != nil {
+		t.Fatal(err)
+	}
+	tmp := t.TempDir() + "/cert.pem"
+	if err := os.WriteFile(tmp, []byte(buf.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r := &report.Report{}
+	if err := x509svid.CheckFile(r, tmp); err != nil {
+		t.Fatalf("CheckFile on multi-block PEM failed: %v", err)
+	}
+	if r.Failed() {
+		var got strings.Builder
+		r.Write(&got)
+		t.Fatalf("multi-block PEM with valid leaf should pass:\n%s", got.String())
 	}
 }
 

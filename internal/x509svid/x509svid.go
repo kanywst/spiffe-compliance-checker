@@ -37,9 +37,20 @@ func CheckFile(r *report.Report, path string) error {
 	return nil
 }
 
+// parseCert decodes a certificate from PEM (handling files where the
+// CERTIFICATE block is preceded by a private key or other PEM blocks) or
+// falls back to raw DER.
 func parseCert(raw []byte) (*x509.Certificate, error) {
-	if block, _ := pem.Decode(raw); block != nil {
-		return x509.ParseCertificate(block.Bytes)
+	rest := raw
+	for {
+		block, next := pem.Decode(rest)
+		if block == nil {
+			break
+		}
+		if block.Type == "CERTIFICATE" {
+			return x509.ParseCertificate(block.Bytes)
+		}
+		rest = next
 	}
 	return x509.ParseCertificate(raw)
 }
@@ -149,6 +160,19 @@ func checkKeyUsage(r *report.Report, cert *x509.Certificate, isLeaf bool) {
 	} else {
 		r.Fail(spec.X509SigningKeyCertSign,
 			fmt.Sprintf("KeyUsage=0x%x missing CertSign", cert.KeyUsage))
+	}
+
+	// Per X509-SVID.md Appendix A: leaf-only KU bits (digitalSignature,
+	// keyEncipherment, keyAgreement) are valid "if and only if" the SVID
+	// is a leaf — so they MUST NOT appear on signing certificates.
+	const leafOnlyKU = x509.KeyUsageDigitalSignature |
+		x509.KeyUsageKeyEncipherment |
+		x509.KeyUsageKeyAgreement
+	if cert.KeyUsage&leafOnlyKU != 0 {
+		r.Fail(spec.X509SigningNoOtherKeyUsage,
+			fmt.Sprintf("KeyUsage=0x%x sets leaf-only bits", cert.KeyUsage))
+	} else {
+		r.Pass(spec.X509SigningNoOtherKeyUsage, "")
 	}
 }
 

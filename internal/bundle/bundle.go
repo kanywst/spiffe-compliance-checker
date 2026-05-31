@@ -4,9 +4,11 @@
 package bundle
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/0-draft/spiffe-compliance-checker/internal/report"
 	"github.com/0-draft/spiffe-compliance-checker/internal/spec"
@@ -21,10 +23,15 @@ func CheckFile(r *report.Report, path string) error {
 	return Check(r, raw)
 }
 
-// Check evaluates the bundle in raw against the SPIFFE spec.
+// Check evaluates the bundle in raw against the SPIFFE spec. JSON numbers
+// are decoded with UseNumber() so spiffe_sequence preserves its full integer
+// width — the spec requires at least 64 bits of precision, but the default
+// float64 path silently loses it past 2^53.
 func Check(r *report.Report, raw []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
 	var b map[string]any
-	if err := json.Unmarshal(raw, &b); err != nil {
+	if err := dec.Decode(&b); err != nil {
 		return fmt.Errorf("bundle is not valid JSON: %w", err)
 	}
 
@@ -61,18 +68,18 @@ func checkSequence(r *report.Report, b map[string]any) {
 		r.Fail(spec.BundleSequenceMonotonic, "spiffe_sequence absent")
 		return
 	}
-	// JSON numbers decode to float64; SPIFFE spec requires integer semantics
-	// with at least 64-bit precision.
-	switch n := v.(type) {
-	case float64:
-		if n != float64(int64(n)) {
-			r.Fail(spec.BundleSequenceMonotonic, fmt.Sprintf("spiffe_sequence=%v is not integer", n))
-			return
-		}
-		r.Pass(spec.BundleSequenceMonotonic, fmt.Sprintf("spiffe_sequence=%d", int64(n)))
-	default:
-		r.Fail(spec.BundleSequenceMonotonic, fmt.Sprintf("spiffe_sequence is %T, want integer", v))
+	n, ok := v.(json.Number)
+	if !ok {
+		r.Fail(spec.BundleSequenceMonotonic,
+			fmt.Sprintf("spiffe_sequence is %T, want integer", v))
+		return
 	}
+	if !isIntegerNumber(n) {
+		r.Fail(spec.BundleSequenceMonotonic,
+			fmt.Sprintf("spiffe_sequence=%s is not integer", n))
+		return
+	}
+	r.Pass(spec.BundleSequenceMonotonic, fmt.Sprintf("spiffe_sequence=%s", n))
 }
 
 func checkRefreshHint(r *report.Report, b map[string]any) {
@@ -81,19 +88,24 @@ func checkRefreshHint(r *report.Report, b map[string]any) {
 		r.Fail(spec.BundleRefreshHintInteger, "spiffe_refresh_hint absent")
 		return
 	}
-	switch n := v.(type) {
-	case float64:
-		if n != float64(int64(n)) {
-			r.Fail(spec.BundleRefreshHintInteger,
-				fmt.Sprintf("spiffe_refresh_hint=%v is not integer", n))
-			return
-		}
-		r.Pass(spec.BundleRefreshHintInteger,
-			fmt.Sprintf("spiffe_refresh_hint=%ds", int64(n)))
-	default:
+	n, ok := v.(json.Number)
+	if !ok {
 		r.Fail(spec.BundleRefreshHintInteger,
 			fmt.Sprintf("spiffe_refresh_hint is %T, want integer", v))
+		return
 	}
+	if !isIntegerNumber(n) {
+		r.Fail(spec.BundleRefreshHintInteger,
+			fmt.Sprintf("spiffe_refresh_hint=%s is not integer", n))
+		return
+	}
+	r.Pass(spec.BundleRefreshHintInteger, fmt.Sprintf("spiffe_refresh_hint=%ss", n))
+}
+
+// isIntegerNumber reports whether n is a plain JSON integer (no fractional
+// component, no exponent notation).
+func isIntegerNumber(n json.Number) bool {
+	return !strings.ContainsAny(n.String(), ".eE")
 }
 
 func checkJWK(r *report.Report, idx int, jwk map[string]any) {

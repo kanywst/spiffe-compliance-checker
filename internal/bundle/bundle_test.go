@@ -105,6 +105,32 @@ func TestCheck(t *testing.T) {
 			}`,
 			wantFailed: false, // SHOULD violations are WARN, not FAIL
 		},
+		{
+			// Regression: spec allows sequence numbers up to 64-bit width.
+			// float64 would silently truncate 9007199254740993 to ...992.
+			name: "spiffe_sequence beyond float64 precision",
+			raw: `{
+				"spiffe_sequence": 9007199254740993,
+				"spiffe_refresh_hint": 300,
+				"keys": [
+					{"kty": "RSA", "use": "jwt-svid", "kid": "k1"}
+				]
+			}`,
+			wantFailed:     false,
+			wantContainAny: []string{"spiffe_sequence=9007199254740993"},
+		},
+		{
+			name: "fractional sequence rejected",
+			raw: `{
+				"spiffe_sequence": 1.5,
+				"spiffe_refresh_hint": 300,
+				"keys": [
+					{"kty": "RSA", "use": "jwt-svid", "kid": "k1"}
+				]
+			}`,
+			wantFailed:     false, // SHOULD-severity downgrade
+			wantContainAny: []string{"is not integer"},
+		},
 	}
 
 	for _, tc := range cases {

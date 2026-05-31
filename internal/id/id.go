@@ -59,9 +59,14 @@ func checkAuthority(r *report.Report, u *url.URL) {
 		r.Pass(spec.IDNoUserinfo, "")
 	}
 
-	if port != "" {
+	switch {
+	case port != "":
 		r.Fail(spec.IDNoPort, fmt.Sprintf("port=%q", port))
-	} else {
+	case strings.HasSuffix(u.Host, ":"):
+		// e.g. "spiffe://example.com:" — u.Port() returns "" but the
+		// authority still has the trailing colon, which the spec forbids.
+		r.Fail(spec.IDNoPort, "authority has trailing colon")
+	default:
 		r.Pass(spec.IDNoPort, "")
 	}
 
