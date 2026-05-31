@@ -1,3 +1,5 @@
+<img src="./assets/logo.png" align="right" width="160" alt="spiffe-compliance-checker logo" />
+
 # spiffe-compliance-checker
 
 [English](README.md) | **日本語**
