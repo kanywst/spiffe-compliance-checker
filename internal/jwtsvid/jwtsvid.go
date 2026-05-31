@@ -69,11 +69,20 @@ func decodePart(s string) (map[string]any, error) {
 
 func checkHeader(r *report.Report, h map[string]any) {
 	// §2.1: alg MUST be one of the whitelisted values.
-	alg, _ := h["alg"].(string)
-	if !allowedAlgs[alg] {
-		r.Fail(spec.JWTAlgWhitelist, fmt.Sprintf("alg=%q", alg))
-	} else {
-		r.Pass(spec.JWTAlgWhitelist, fmt.Sprintf("alg=%s", alg))
+	switch v, present := h["alg"]; {
+	case !present:
+		r.Fail(spec.JWTAlgWhitelist, "alg header absent")
+	default:
+		alg, ok := v.(string)
+		switch {
+		case !ok:
+			r.Fail(spec.JWTAlgWhitelist,
+				fmt.Sprintf("alg is %T, want string", v))
+		case !allowedAlgs[alg]:
+			r.Fail(spec.JWTAlgWhitelist, fmt.Sprintf("alg=%q", alg))
+		default:
+			r.Pass(spec.JWTAlgWhitelist, fmt.Sprintf("alg=%s", alg))
+		}
 	}
 
 	// §2.3: typ, if set, MUST be JWT or JOSE.

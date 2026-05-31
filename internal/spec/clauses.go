@@ -49,8 +49,12 @@ var (
 		`path MUST NOT include a trailing "/"`}
 	IDPathSegmentCharset = Clause{"SPIFFE-ID.md", "§2.2", SeverityMUST,
 		"path segments MUST contain only [a-zA-Z0-9.-_]"}
-	IDLengthLimit = Clause{"SPIFFE-ID.md", "§2.3", SeverityMUST,
-		"SPIFFE ID MUST be supported up to 2048 bytes; longer IDs SHOULD NOT be generated"}
+	// §2.3 splits the requirement: implementations MUST support up to
+	// 2048 bytes (a consumer-side rule), but generators only SHOULD NOT
+	// exceed it. Since this checker validates artifacts, the relevant
+	// severity is the generator-side SHOULD NOT.
+	IDLengthLimit = Clause{"SPIFFE-ID.md", "§2.3", SeveritySHOULD,
+		"SPIFFE ID SHOULD NOT exceed 2048 bytes"}
 	IDTrustDomainLengthLimit = Clause{"SPIFFE-ID.md", "§2.3", SeverityMUST,
 		"trust domain MUST be at most 255 bytes"}
 )

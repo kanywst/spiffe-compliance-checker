@@ -130,6 +130,11 @@ func isNegativeNumber(n json.Number) bool {
 	return strings.HasPrefix(n.String(), "-")
 }
 
+// whitespaceStripper removes the whitespace characters commonly inserted by
+// JWKS pretty-printers into x5c base64 blobs. Allocated once because Replacer
+// avoids the per-call slice allocation of strings.Fields+Join.
+var whitespaceStripper = strings.NewReplacer("\n", "", "\r", "", "\t", "", " ", "")
+
 func checkJWK(r *report.Report, idx int, jwk map[string]any) {
 	keyTag := fmt.Sprintf("keys[%d]", idx)
 
@@ -208,7 +213,7 @@ func checkX509Entry(r *report.Report, keyTag string, jwk map[string]any) {
 	}
 	// Real-world JWKS often line-wrap or pretty-print x5c. base64.Std
 	// does not tolerate whitespace, so strip it before decoding.
-	normalized := strings.Join(strings.Fields(certStr), "")
+	normalized := whitespaceStripper.Replace(certStr)
 	der, err := base64.StdEncoding.DecodeString(normalized)
 	if err != nil {
 		r.Fail(spec.BundleX509X5CPresent,

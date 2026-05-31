@@ -16,18 +16,19 @@ import (
 // Check evaluates the MUST/SHOULD clauses defined in SPIFFE-ID.md against s
 // and appends the assertions to r.
 func Check(r *report.Report, s string) {
-	if strings.Contains(s, "?") {
+	switch {
+	case strings.Contains(s, "?"):
 		r.Fail(spec.IDNoQueryFragment, "found '?' in input")
-		return
-	}
-	if strings.Contains(s, "#") {
+	case strings.Contains(s, "#"):
 		r.Fail(spec.IDNoQueryFragment, "found '#' in input")
-		return
+	default:
+		r.Pass(spec.IDNoQueryFragment, "")
 	}
-	r.Pass(spec.IDNoQueryFragment, "")
 
 	u, err := url.Parse(s)
 	if err != nil {
+		// URL parse failure leaves the remaining checks no input to work on,
+		// so we only short-circuit in this hard-fail case.
 		r.Fail(spec.IDSchemeSpiffe, fmt.Sprintf("URL parse error: %v", err))
 		return
 	}
