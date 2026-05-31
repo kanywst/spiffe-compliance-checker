@@ -4,17 +4,28 @@
 
 [![ci](https://github.com/0-draft/spiffe-compliance-checker/actions/workflows/ci.yml/badge.svg)](https://github.com/0-draft/spiffe-compliance-checker/actions/workflows/ci.yml)
 
+![demo](./assets/demo.gif)
+
 [SPIFFE](https://spiffe.io) の artifact を静的に検証する CLI。SPIFFE ID 文字列、X.509-SVID 証明書、JWT-SVID トークン、Trust Bundle のいずれかを `scc` に渡すと、[SPIFFE 仕様](https://github.com/spiffe/spiffe/tree/main/standards) の MUST / MUST NOT 句のうち何が満たされていて何が違反しているかを 1 行ずつ報告する。各行には仕様書名とセクション番号が付くので、落ちた assertion からそのまま仕様本文に飛んで根拠を確認できる。
 
 SPIFFE は CNCF の仕様セットで、`spiffe://...` 形式の workload identity とそれを運ぶ SVID を定義している。SPIRE、Istio の mTLS、Cilium の mutual auth、社内製の実装などが SPIFFE 準拠を名乗っている。仕様は [spiffe/spiffe](https://github.com/spiffe/spiffe) の 8 本の markdown に分散しているが、公式の conformance suite は存在しない。`scc` はその空白のうち「外から artifact だけ見て検証できる範囲」をカバーする。Workload attestation、鍵ローテーション、Workload API endpoint の振る舞い、特定 bundle に対する署名検証などの動的な側面はスコープ外。
 
 ## インストール
 
+どれを使っても同じ `scc` バイナリが PATH に入る。
+
 ```bash
+# Homebrew (macOS + Linux、prebuilt バイナリ)
+brew install kanywst/tap/spiffe-compliance-checker
+
+# go install (Go 1.26+ ある環境ならどこでも)
 go install github.com/0-draft/spiffe-compliance-checker/cmd/scc@latest
+
+# Prebuilt アーカイブを直接ダウンロード
+# https://github.com/0-draft/spiffe-compliance-checker/releases
 ```
 
-Go 1.26 以降が必要。CLI は色付き出力に [`charm.land/lipgloss/v2`](https://github.com/charmbracelet/lipgloss)、TTY 検出に `golang.org/x/term` を使う。他のランタイム依存なし。
+CLI は色付き出力に [`charm.land/lipgloss/v2`](https://github.com/charmbracelet/lipgloss)、TTY 検出に `golang.org/x/term` を使う。他のランタイム依存なし。
 
 ## 使い方
 

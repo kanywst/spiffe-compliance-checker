@@ -1,6 +1,7 @@
 # Binaries
 /scc
 /dist/
+/build/
 *.exe
 *.test
 *.out
