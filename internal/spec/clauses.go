@@ -73,6 +73,8 @@ var (
 		"Key Usage extension MUST be set and marked critical"}
 	X509SigningKeyCertSign = Clause{"X509-SVID.md", "§4.3", SeverityMUST,
 		"signing certificate MUST set keyCertSign in Key Usage"}
+	X509SigningNoOtherKeyUsage = Clause{"X509-SVID.md", "App. A", SeverityMUST,
+		"signing certificate Key Usage MUST be limited to keyCertSign and (optionally) cRLSign"}
 	X509LeafDigitalSignature = Clause{"X509-SVID.md", "§4.3", SeverityMUST,
 		"leaf certificate MUST set digitalSignature in Key Usage"}
 	X509LeafNoKeyCertSign = Clause{"X509-SVID.md", "§4.3", SeverityMUST,
