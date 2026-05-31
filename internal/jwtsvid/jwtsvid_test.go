@@ -120,6 +120,24 @@ func TestCheck(t *testing.T) {
 			wantFailed:     true,
 			wantContainAny: []string{"must be a string or an array"},
 		},
+		{
+			// Regression: typ present but not a string — must not silently
+			// coerce to "" and report `typ=""`.
+			name:           "typ is a number",
+			header:         map[string]any{"alg": "RS256", "typ": 42},
+			payload:        map[string]any{"sub": "spiffe://example.com/a", "aud": []string{"x"}, "exp": future},
+			wantFailed:     true,
+			wantContainAny: []string{"typ is"},
+		},
+		{
+			// Regression: sub present but not a string — must report type
+			// mismatch, not "absent".
+			name:           "sub is a boolean",
+			header:         map[string]any{"alg": "RS256"},
+			payload:        map[string]any{"sub": true, "aud": []string{"x"}, "exp": future},
+			wantFailed:     true,
+			wantContainAny: []string{"sub claim is"},
+		},
 	}
 
 	for _, tc := range cases {

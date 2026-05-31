@@ -16,6 +16,23 @@ import (
 	"github.com/0-draft/spiffe-compliance-checker/internal/report"
 )
 
+// chunkBase64 inserts a newline every n characters, mimicking how real-world
+// JWKS pretty-printers wrap long x5c values.
+func chunkBase64(s string, n int) string {
+	var out strings.Builder
+	for i := 0; i < len(s); i += n {
+		end := i + n
+		if end > len(s) {
+			end = len(s)
+		}
+		out.WriteString(s[i:end])
+		if end < len(s) {
+			out.WriteString("\\n")
+		}
+	}
+	return out.String()
+}
+
 // makeCertB64 returns a base64-encoded DER X.509 certificate suitable for
 // embedding in a JWKS x5c entry. Tests use it so the bundle checker's
 // "x5c MUST contain a parseable cert" assertion has something real to chew on.
@@ -93,7 +110,7 @@ func TestCheck(t *testing.T) {
 				]
 			}`,
 			wantFailed:     true,
-			wantContainAny: []string{"kid absent or empty"},
+			wantContainAny: []string{"kid absent"},
 		},
 		{
 			name: "unknown use value",
@@ -203,6 +220,87 @@ func TestCheck(t *testing.T) {
 			}`,
 			wantFailed:     true,
 			wantContainAny: []string{"want string"},
+		},
+		{
+			// Regression: real-world JWKS line-wrap base64 in x5c.
+			name: "x5c with embedded newlines and spaces",
+			raw: `{
+				"spiffe_sequence": 1,
+				"spiffe_refresh_hint": 300,
+				"keys": [
+					{"kty": "RSA", "use": "x509-svid", "x5c": ["` + chunkBase64(certB64, 32) + `"]}
+				]
+			}`,
+			wantFailed: false,
+		},
+		{
+			// Regression: spec implies non-negative; negative makes no sense.
+			name: "negative spiffe_sequence rejected",
+			raw: `{
+				"spiffe_sequence": -1,
+				"spiffe_refresh_hint": 300,
+				"keys": [
+					{"kty": "RSA", "use": "jwt-svid", "kid": "k1"}
+				]
+			}`,
+			wantFailed:     false, // SHOULD-severity (sequence is SHOULD)
+			wantContainAny: []string{"must be non-negative"},
+		},
+		{
+			name: "negative spiffe_refresh_hint rejected",
+			raw: `{
+				"spiffe_sequence": 1,
+				"spiffe_refresh_hint": -300,
+				"keys": [
+					{"kty": "RSA", "use": "jwt-svid", "kid": "k1"}
+				]
+			}`,
+			wantFailed:     false, // SHOULD-severity (refresh_hint is SHOULD)
+			wantContainAny: []string{"must be non-negative"},
+		},
+		{
+			// Regression: kty present but wrong type (a boolean here)
+			// should report a type mismatch, not "absent".
+			name: "kty is wrong type",
+			raw: `{
+				"spiffe_sequence": 1,
+				"spiffe_refresh_hint": 300,
+				"keys": [
+					{"kty": true, "use": "jwt-svid", "kid": "k1"}
+				]
+			}`,
+			wantFailed:     true,
+			wantContainAny: []string{"kty is bool"},
+		},
+		{
+			name: "use is wrong type",
+			raw: `{
+				"spiffe_sequence": 1,
+				"spiffe_refresh_hint": 300,
+				"keys": [
+					{"kty": "RSA", "use": 7, "kid": "k1"}
+				]
+			}`,
+			wantFailed: true,
+			wantContainAny: []string{
+				"use is",
+				"want string",
+			},
+		},
+		{
+			name: "jwt kid is wrong type",
+			raw: `{
+				"spiffe_sequence": 1,
+				"spiffe_refresh_hint": 300,
+				"keys": [
+					{"kty": "RSA", "use": "jwt-svid", "kid": 42}
+				]
+			}`,
+			wantFailed: true,
+			wantContainAny: []string{
+				"kid is",
+				"want string",
+			},
 		},
 	}
 

@@ -77,11 +77,14 @@ func checkHeader(r *report.Report, h map[string]any) {
 	}
 
 	// §2.3: typ, if set, MUST be JWT or JOSE.
-	if v, ok := h["typ"]; ok {
-		t, _ := v.(string)
-		if t != "JWT" && t != "JOSE" {
+	if v, present := h["typ"]; present {
+		t, ok := v.(string)
+		switch {
+		case !ok:
+			r.Fail(spec.JWTTypValue, fmt.Sprintf("typ is %T, want string", v))
+		case t != "JWT" && t != "JOSE":
 			r.Fail(spec.JWTTypValue, fmt.Sprintf("typ=%q", t))
-		} else {
+		default:
 			r.Pass(spec.JWTTypValue, fmt.Sprintf("typ=%s", t))
 		}
 	}
@@ -89,14 +92,22 @@ func checkHeader(r *report.Report, h map[string]any) {
 
 func checkClaims(r *report.Report, p map[string]any) {
 	// §3.1: sub MUST be set to a SPIFFE ID.
-	sub, _ := p["sub"].(string)
-	if sub == "" {
+	switch v, present := p["sub"]; {
+	case !present:
 		r.Fail(spec.JWTSubPresent, "sub claim absent")
-	} else {
-		r.Pass(spec.JWTSubPresent, fmt.Sprintf("sub=%s", sub))
-		// Run the SPIFFE-ID checks against the sub value so SPIFFE-ID MUST
-		// clauses are propagated.
-		id.Check(r, sub)
+	default:
+		sub, ok := v.(string)
+		switch {
+		case !ok:
+			r.Fail(spec.JWTSubPresent,
+				fmt.Sprintf("sub claim is %T, want string", v))
+		case sub == "":
+			r.Fail(spec.JWTSubPresent, "sub claim is empty")
+		default:
+			r.Pass(spec.JWTSubPresent, fmt.Sprintf("sub=%s", sub))
+			// Propagate SPIFFE-ID MUST clauses through the sub value.
+			id.Check(r, sub)
+		}
 	}
 
 	// §3.2: aud MUST be present with one or more values. RFC 7519 says

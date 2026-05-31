@@ -177,11 +177,9 @@ func checkKeyUsage(r *report.Report, cert *x509.Certificate, isLeaf bool) {
 }
 
 // checkSANCritical enforces X509-SVID.md §3.1: when Subject is omitted, the
-// SAN extension MUST be marked critical. Per RFC 5280, an empty Subject
-// DN is encoded as an empty DER SEQUENCE (`30 00`, length 2), so any
-// shorter or equal-length RawSubject is treated as empty.
+// SAN extension MUST be marked critical.
 func checkSANCritical(r *report.Report, cert *x509.Certificate) {
-	if len(cert.RawSubject) > 2 {
+	if len(cert.Subject.Names) > 0 {
 		return // Subject present, the conditional clause does not apply.
 	}
 	crit, found := extensionCritical(cert, oidSubjectAltName)
