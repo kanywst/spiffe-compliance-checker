@@ -1,4 +1,4 @@
-module github.com/0-draft/spiffe-compliance-checker
+module github.com/kanywst/spiffe-compliance-checker
 
 go 1.26
 

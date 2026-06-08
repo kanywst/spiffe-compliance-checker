@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/0-draft/spiffe-compliance-checker/internal/bundle"
-	"github.com/0-draft/spiffe-compliance-checker/internal/report"
+	"github.com/kanywst/spiffe-compliance-checker/internal/bundle"
+	"github.com/kanywst/spiffe-compliance-checker/internal/report"
 )
 
 // chunkBase64 inserts a newline every n characters, mimicking how real-world

@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/0-draft/spiffe-compliance-checker/internal/report"
-	"github.com/0-draft/spiffe-compliance-checker/internal/x509svid"
+	"github.com/kanywst/spiffe-compliance-checker/internal/report"
+	"github.com/kanywst/spiffe-compliance-checker/internal/x509svid"
 )
 
 type certOpts struct {

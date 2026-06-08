@@ -4,7 +4,7 @@
 
 **English** | [日本語](README.ja.md)
 
-[![ci](https://github.com/0-draft/spiffe-compliance-checker/actions/workflows/ci.yml/badge.svg)](https://github.com/0-draft/spiffe-compliance-checker/actions/workflows/ci.yml)
+[![ci](https://github.com/kanywst/spiffe-compliance-checker/actions/workflows/ci.yml/badge.svg)](https://github.com/kanywst/spiffe-compliance-checker/actions/workflows/ci.yml)
 
 ![demo](./assets/demo.gif)
 
@@ -21,10 +21,10 @@ Pick whichever fits your setup. Each one installs the same `scc` binary on PATH.
 brew install kanywst/tap/spiffe-compliance-checker
 
 # go install (any platform with Go 1.26+)
-go install github.com/0-draft/spiffe-compliance-checker/cmd/scc@latest
+go install github.com/kanywst/spiffe-compliance-checker/cmd/scc@latest
 
 # Prebuilt archive
-# https://github.com/0-draft/spiffe-compliance-checker/releases
+# https://github.com/kanywst/spiffe-compliance-checker/releases
 ```
 
 The CLI depends on [`charm.land/lipgloss/v2`](https://github.com/charmbracelet/lipgloss) for colored terminal output and `golang.org/x/term` for TTY detection. No other runtime dependencies.

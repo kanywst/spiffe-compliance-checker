@@ -4,7 +4,7 @@
 
 [English](README.md) | **日本語**
 
-[![ci](https://github.com/0-draft/spiffe-compliance-checker/actions/workflows/ci.yml/badge.svg)](https://github.com/0-draft/spiffe-compliance-checker/actions/workflows/ci.yml)
+[![ci](https://github.com/kanywst/spiffe-compliance-checker/actions/workflows/ci.yml/badge.svg)](https://github.com/kanywst/spiffe-compliance-checker/actions/workflows/ci.yml)
 
 ![demo](./assets/demo.gif)
 
@@ -21,10 +21,10 @@ SPIFFE は CNCF の仕様セットで、`spiffe://...` 形式の workload identi
 brew install kanywst/tap/spiffe-compliance-checker
 
 # go install (Go 1.26+ ある環境ならどこでも)
-go install github.com/0-draft/spiffe-compliance-checker/cmd/scc@latest
+go install github.com/kanywst/spiffe-compliance-checker/cmd/scc@latest
 
 # Prebuilt アーカイブを直接ダウンロード
-# https://github.com/0-draft/spiffe-compliance-checker/releases
+# https://github.com/kanywst/spiffe-compliance-checker/releases
 ```
 
 CLI は色付き出力に [`charm.land/lipgloss/v2`](https://github.com/charmbracelet/lipgloss)、TTY 検出に `golang.org/x/term` を使う。他のランタイム依存なし。

@@ -13,7 +13,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"golang.org/x/term"
 
-	"github.com/0-draft/spiffe-compliance-checker/internal/spec"
+	"github.com/kanywst/spiffe-compliance-checker/internal/spec"
 )
 
 // Status is the outcome of evaluating one clause against an artifact.

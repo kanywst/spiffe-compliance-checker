@@ -9,8 +9,8 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/0-draft/spiffe-compliance-checker/internal/report"
-	"github.com/0-draft/spiffe-compliance-checker/internal/spec"
+	"github.com/kanywst/spiffe-compliance-checker/internal/report"
+	"github.com/kanywst/spiffe-compliance-checker/internal/spec"
 )
 
 // Check evaluates the MUST/SHOULD clauses defined in SPIFFE-ID.md against s

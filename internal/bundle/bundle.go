@@ -12,8 +12,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/0-draft/spiffe-compliance-checker/internal/report"
-	"github.com/0-draft/spiffe-compliance-checker/internal/spec"
+	"github.com/kanywst/spiffe-compliance-checker/internal/report"
+	"github.com/kanywst/spiffe-compliance-checker/internal/spec"
 )
 
 // CheckFile reads a JSON bundle from path and runs Check on it.

@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/0-draft/spiffe-compliance-checker/internal/jwtsvid"
-	"github.com/0-draft/spiffe-compliance-checker/internal/report"
+	"github.com/kanywst/spiffe-compliance-checker/internal/jwtsvid"
+	"github.com/kanywst/spiffe-compliance-checker/internal/report"
 )
 
 func mkToken(t *testing.T, header, payload map[string]any) string {

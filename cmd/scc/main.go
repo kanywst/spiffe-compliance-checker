@@ -10,11 +10,11 @@ import (
 	"io"
 	"os"
 
-	"github.com/0-draft/spiffe-compliance-checker/internal/bundle"
-	"github.com/0-draft/spiffe-compliance-checker/internal/id"
-	"github.com/0-draft/spiffe-compliance-checker/internal/jwtsvid"
-	"github.com/0-draft/spiffe-compliance-checker/internal/report"
-	"github.com/0-draft/spiffe-compliance-checker/internal/x509svid"
+	"github.com/kanywst/spiffe-compliance-checker/internal/bundle"
+	"github.com/kanywst/spiffe-compliance-checker/internal/id"
+	"github.com/kanywst/spiffe-compliance-checker/internal/jwtsvid"
+	"github.com/kanywst/spiffe-compliance-checker/internal/report"
+	"github.com/kanywst/spiffe-compliance-checker/internal/x509svid"
 )
 
 // Populated at build time by goreleaser via -ldflags. Defaults are sentinels

@@ -12,9 +12,9 @@ import (
 	"net/url"
 	"os"
 
-	"github.com/0-draft/spiffe-compliance-checker/internal/id"
-	"github.com/0-draft/spiffe-compliance-checker/internal/report"
-	"github.com/0-draft/spiffe-compliance-checker/internal/spec"
+	"github.com/kanywst/spiffe-compliance-checker/internal/id"
+	"github.com/kanywst/spiffe-compliance-checker/internal/report"
+	"github.com/kanywst/spiffe-compliance-checker/internal/spec"
 )
 
 // RFC 5280 standard X.509 extension OIDs.

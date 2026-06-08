@@ -44,7 +44,7 @@ changelog:
 
 release:
   github:
-    owner: 0-draft
+    owner: kanywst
     name: spiffe-compliance-checker
   draft: false
   prerelease: auto
@@ -61,7 +61,7 @@ brews:
       name: homebrew-tap
       branch: main
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
-    homepage: https://github.com/0-draft/spiffe-compliance-checker
+    homepage: https://github.com/kanywst/spiffe-compliance-checker
     description: Static MUST-clause compliance checker for SPIFFE artifacts (SPIFFE-ID, X.509-SVID, JWT-SVID, Trust Bundle).
     license: Apache-2.0
     commit_author:
