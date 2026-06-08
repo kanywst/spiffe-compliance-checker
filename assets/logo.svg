@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120" role="img" aria-label="scc — spiffe-compliance-checker logo">
+  <defs>
+    <linearGradient id="scc-violet" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#A371F7"/>
+      <stop offset="1" stop-color="#5B4FE6"/>
+    </linearGradient>
+    <clipPath id="scc-weave">
+      <circle cx="60" cy="38" r="13"/>
+    </clipPath>
+  </defs>
+
+  <!-- two interlocking rings: chain of trust -->
+  <circle cx="46" cy="60" r="26" fill="none" stroke="url(#scc-violet)" stroke-width="11"/>
+  <circle cx="74" cy="60" r="26" fill="none" stroke="url(#scc-violet)" stroke-width="11"/>
+  <!-- redraw left ring over right at the top crossing to weave them -->
+  <circle cx="46" cy="60" r="26" fill="none" stroke="url(#scc-violet)" stroke-width="11" clip-path="url(#scc-weave)"/>
+
+  <!-- mint check in the shared overlap: compliance verified -->
+  <path d="M51 60 L58 67 L70 53" fill="none" stroke="#3DDC97" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
