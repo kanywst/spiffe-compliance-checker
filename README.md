@@ -1,4 +1,4 @@
-<img src="./assets/logo.png" align="right" width="160" alt="spiffe-compliance-checker logo" />
+<img src="./assets/logo.png?v=2" align="right" width="160" alt="spiffe-compliance-checker logo" />
 
 # spiffe-compliance-checker
 
