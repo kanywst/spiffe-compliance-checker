@@ -124,6 +124,8 @@ var (
 		`"spiffe_refresh_hint" SHOULD be set; when present MUST be an integer in seconds`}
 	BundleX509X5CPresent = Clause{"X509-SVID.md", "§6.1", SeverityMUST,
 		`x509-svid JWK entry MUST contain "x5c" with exactly one base64 DER CA certificate`}
+	BundleX509SelfSigned = Clause{"X509-SVID.md", "§6.1", SeveritySHOULD,
+		"x509-svid CA certificate SHOULD be self-signed"}
 	BundleX509NoKid = Clause{"X509-SVID.md", "§6.1", SeverityMUST,
 		`x509-svid JWK entry MUST NOT set "kid"`}
 	BundleJWTKidPresent = Clause{"JWT-SVID.md", "§6.1", SeverityMUST,

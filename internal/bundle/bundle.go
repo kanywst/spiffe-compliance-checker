@@ -211,6 +211,14 @@ func checkX509Entry(r *report.Report, keyTag string, jwk map[string]any) {
 			fmt.Sprintf("%s: x5c[0] is %T, want string", keyTag, x5c[0]))
 		return
 	}
+	// §6.1 mandates base64-encoded DER, not PEM. Pasting PEM armor is a common
+	// mistake that would otherwise surface as an opaque base64 error, so detect
+	// it and say so plainly.
+	if strings.Contains(certStr, "-----BEGIN") {
+		r.Fail(spec.BundleX509X5CPresent,
+			keyTag+": x5c[0] is PEM; it MUST be base64-encoded DER, without the PEM armor")
+		return
+	}
 	// Real-world JWKS often line-wrap or pretty-print x5c. base64.Std
 	// does not tolerate whitespace, so strip it before decoding.
 	normalized := whitespaceStripper.Replace(certStr)
@@ -220,12 +228,32 @@ func checkX509Entry(r *report.Report, keyTag string, jwk map[string]any) {
 			fmt.Sprintf("%s: x5c[0] is not valid base64: %v", keyTag, err))
 		return
 	}
-	if _, err := x509.ParseCertificate(der); err != nil {
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
 		r.Fail(spec.BundleX509X5CPresent,
 			fmt.Sprintf("%s: x5c[0] is not a parseable X.509 cert: %v", keyTag, err))
 		return
 	}
 	r.Pass(spec.BundleX509X5CPresent, keyTag)
+
+	// X509-SVID.md §6.1: "the certificate SHOULD be self-signed." A bundle CA
+	// is a trust anchor, so a non-self-signed entry is suspicious though not
+	// strictly forbidden (hence SHOULD/WARN).
+	if isSelfSigned(cert) {
+		r.Pass(spec.BundleX509SelfSigned, keyTag)
+	} else {
+		r.Fail(spec.BundleX509SelfSigned,
+			keyTag+": x5c[0] is not self-signed (issuer != subject or signature not self-verifiable)")
+	}
+}
+
+// isSelfSigned reports whether cert is self-signed: its issuer and subject
+// match and its signature verifies against its own public key.
+func isSelfSigned(cert *x509.Certificate) bool {
+	if !bytes.Equal(cert.RawIssuer, cert.RawSubject) {
+		return false
+	}
+	return cert.CheckSignatureFrom(cert) == nil
 }
 
 func checkJWTEntry(r *report.Report, keyTag string, jwk map[string]any) {
