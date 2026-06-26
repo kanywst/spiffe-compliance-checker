@@ -32,13 +32,28 @@ The CLI depends on [`charm.land/lipgloss/v2`](https://github.com/charmbracelet/l
 ## Usage
 
 ```text
-scc id        <spiffe-id-string>
-scc x509-svid <cert.pem | cert.der>
-scc jwt-svid  <token>
-scc bundle    <bundle.json>
+scc id        [--format text|json|sarif] <spiffe-id-string>
+scc x509-svid [--format text|json|sarif] <cert.pem | cert.der>
+scc jwt-svid  [--format text|json|sarif] <token>
+scc bundle    [--format text|json|sarif] <bundle.json>
 ```
 
 Each subcommand prints one line per checked clause and exits non-zero if any MUST clause fails. SHOULD violations surface as `WARN` and do not change the exit code. Colors render only when stdout is a TTY and `NO_COLOR` is unset, so the same binary is safe in scripts and CI logs.
+
+### Output formats
+
+`--format` selects how results are rendered. The exit code is identical across all three, so `json` and `sarif` are safe to gate CI on:
+
+| Format          | Use case                                                                       |
+| --------------- | ------------------------------------------------------------------------------ |
+| `text` (default)| Human-readable, optionally colored report.                                     |
+| `json`          | Stable object for automation (`jq`, scripts). Carries every assertion + summary.|
+| `sarif`         | SARIF 2.1.0 for [GitHub Code Scanning](https://docs.github.com/en/code-security/code-scanning) and other aggregators. Only violations become results. |
+
+```bash
+# Fail a pipeline and upload findings to GitHub Code Scanning
+scc x509-svid --format sarif leaf.pem > scc.sarif
+```
 
 ```text
 $ scc id 'spiffe://Example.com/payments/web-fe'
