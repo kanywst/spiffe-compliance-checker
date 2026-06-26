@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -14,6 +15,11 @@ import (
 	"github.com/kanywst/spiffe-compliance-checker/internal/report"
 	"github.com/kanywst/spiffe-compliance-checker/internal/spec"
 )
+
+// permittedHeaders is the closed set of JOSE header parameters allowed in a
+// JWT-SVID per JWT-SVID.md §2. kid is optional but permitted; anything else
+// is forbidden.
+var permittedHeaders = map[string]bool{"alg": true, "kid": true, "typ": true}
 
 var allowedAlgs = map[string]bool{
 	"RS256": true, "RS384": true, "RS512": true,
@@ -68,6 +74,23 @@ func decodePart(s string) (map[string]any, error) {
 }
 
 func checkHeader(r *report.Report, h map[string]any) {
+	// §2: the JOSE header is a closed set — any parameter other than alg,
+	// kid, or typ MUST NOT be present. This is the spec's defence against
+	// header-injection attacks (jku, x5u, crit, ...).
+	var forbidden []string
+	for k := range h {
+		if !permittedHeaders[k] {
+			forbidden = append(forbidden, k)
+		}
+	}
+	if len(forbidden) > 0 {
+		sort.Strings(forbidden)
+		r.Fail(spec.JWTHeaderClosedSet,
+			fmt.Sprintf("forbidden header(s): %s", strings.Join(forbidden, ", ")))
+	} else {
+		r.Pass(spec.JWTHeaderClosedSet, "")
+	}
+
 	// §2.1: alg MUST be one of the whitelisted values.
 	switch v, present := h["alg"]; {
 	case !present:

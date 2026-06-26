@@ -138,6 +138,24 @@ func TestCheck(t *testing.T) {
 			wantFailed:     true,
 			wantContainAny: []string{"sub claim is"},
 		},
+		{
+			// §2: the JOSE header is a closed set. A forbidden header such as
+			// jku (a header-injection vector) MUST be rejected even when alg
+			// is otherwise valid.
+			name:           "forbidden JOSE header",
+			header:         map[string]any{"alg": "RS256", "jku": "https://evil.example/keys"},
+			payload:        map[string]any{"sub": "spiffe://example.com/a", "aud": []string{"x"}, "exp": future},
+			wantFailed:     true,
+			wantContainAny: []string{"JOSE header MUST NOT include", "forbidden header(s): jku"},
+		},
+		{
+			// Multiple forbidden headers are reported sorted for stable output.
+			name:           "multiple forbidden headers",
+			header:         map[string]any{"alg": "ES256", "x5u": "u", "crit": []any{"x"}},
+			payload:        map[string]any{"sub": "spiffe://example.com/a", "aud": []string{"x"}, "exp": future},
+			wantFailed:     true,
+			wantContainAny: []string{"forbidden header(s): crit, x5u"},
+		},
 	}
 
 	for _, tc := range cases {

@@ -91,12 +91,19 @@ var (
 
 // JWT-SVID clauses (JWT-SVID.md).
 var (
-	JWTCompactSerialization = Clause{"JWT-SVID.md", "§1", SeverityMUST,
+	JWTCompactSerialization = Clause{"JWT-SVID.md", "§5.1", SeverityMUST,
 		"JWT-SVID MUST use JWS Compact Serialization, not JWS JSON Serialization"}
 	JWTAlgWhitelist = Clause{"JWT-SVID.md", "§2.1", SeverityMUST,
 		"alg MUST be one of RS{256,384,512}, PS{256,384,512}, ES{256,384,512}"}
 	JWTTypValue = Clause{"JWT-SVID.md", "§2.3", SeverityMUST,
 		`if typ header is set, value MUST be "JWT" or "JOSE"`}
+	// §2 deliberately restricts the JOSE header to a closed set to avoid the
+	// algorithm-agility vulnerabilities that have plagued JWT libraries:
+	// "Any header not described here, registered or private, MUST NOT be
+	// included in the JWT-SVID JOSE Header." The permitted headers are alg
+	// (§2.1), kid (§2.2), and typ (§2.3).
+	JWTHeaderClosedSet = Clause{"JWT-SVID.md", "§2", SeverityMUST,
+		`JOSE header MUST NOT include parameters other than "alg", "kid", "typ"`}
 	JWTSubPresent = Clause{"JWT-SVID.md", "§3.1", SeverityMUST,
 		"sub claim MUST be set to a SPIFFE ID"}
 	JWTAudPresent = Clause{"JWT-SVID.md", "§3.2", SeverityMUST,
