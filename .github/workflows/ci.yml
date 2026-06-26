@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   ci:
-    name: lint / build / test / vulncheck
+    name: lint / fmt / build / test / coverage / vulncheck
     runs-on: ubuntu-latest
     steps:
       - name: harden runner
@@ -38,11 +38,33 @@ jobs:
         with:
           version: v2.12.2
 
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::these files are not gofmt-clean:"
+            echo "$unformatted"
+            exit 1
+          fi
+
       - name: build
         run: go build -trimpath ./...
 
       - name: test
-        run: go test -race -shuffle=on -count=1 ./...
+        run: go test -race -shuffle=on -count=1 -covermode=atomic -coverprofile=coverage.out ./...
+
+      - name: coverage gate
+        # Ratchet: this floor only guards against regressions. Raise it as
+        # coverage-improving PRs land so "CI green" keeps implying "well tested".
+        env:
+          THRESHOLD: "58"
+        run: |
+          total=$(go tool cover -func=coverage.out | awk '/^total:/ {print substr($3, 1, length($3)-1)}')
+          echo "total coverage: ${total}% (threshold ${THRESHOLD}%)"
+          if awk "BEGIN{exit !(${total} < ${THRESHOLD})}"; then
+            echo "::error::coverage ${total}% is below the ${THRESHOLD}% threshold"
+            exit 1
+          fi
 
       - name: govulncheck
         uses: golang/govulncheck-action@v1
