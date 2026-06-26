@@ -174,4 +174,19 @@ func TestWriteSARIFLocations(t *testing.T) {
 	if strings.Contains(noLoc.String(), "physicalLocation") {
 		t.Error("a report without Artifact must not emit physicalLocation")
 	}
+
+	// Windows-style backslashes must be normalized to forward slashes so the
+	// SARIF uri is a valid RFC 3986 reference.
+	win := sampleReport()
+	win.Artifact = `certs\leaf.pem`
+	var winBuf strings.Builder
+	if err := win.WriteSARIF(&winBuf); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(winBuf.String(), "certs/leaf.pem") {
+		t.Errorf("expected backslashes normalized to certs/leaf.pem\n%s", winBuf.String())
+	}
+	if strings.Contains(winBuf.String(), `certs\\leaf.pem`) {
+		t.Errorf("backslashes must not survive into the uri\n%s", winBuf.String())
+	}
 }

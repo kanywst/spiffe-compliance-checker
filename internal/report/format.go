@@ -192,12 +192,15 @@ func (r *Report) WriteSARIF(w io.Writer) error {
 
 	// When the input was a file, attach it as the result location so GitHub
 	// Code Scanning can surface findings against that path. String/token
-	// inputs have no file, so results are emitted without a location.
+	// inputs have no file, so results are emitted without a location. SARIF
+	// uris are RFC 3986 references, which use forward slashes, so normalize
+	// Windows-style backslashes.
 	var locations []sarifLocation
 	if r.Artifact != "" {
+		uri := strings.ReplaceAll(r.Artifact, "\\", "/")
 		locations = []sarifLocation{{
 			PhysicalLocation: sarifPhysicalLocation{
-				ArtifactLocation: sarifArtifactLocation{URI: r.Artifact},
+				ArtifactLocation: sarifArtifactLocation{URI: uri},
 			},
 		}}
 	}
