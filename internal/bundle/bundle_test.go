@@ -5,6 +5,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/base64"
 	"math/big"
 	"net/url"
@@ -58,8 +59,56 @@ func makeCertB64(t *testing.T) string {
 	return base64.StdEncoding.EncodeToString(der)
 }
 
+// makeNonSelfSignedCertB64 returns a base64 DER CA certificate signed by a
+// *different* CA, so its issuer != subject. Used to exercise the §6.1
+// self-signed SHOULD check.
+func makeNonSelfSignedCertB64(t *testing.T) string {
+	t.Helper()
+	caKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	caTmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(10),
+		Subject:               pkix.Name{CommonName: "issuing-ca"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+		KeyUsage:              x509.KeyUsageCertSign,
+	}
+	caDER, err := x509.CreateCertificate(rand.Reader, caTmpl, caTmpl, &caKey.PublicKey, caKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca, err := x509.ParseCertificate(caDER)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leafKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leafTmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(11),
+		Subject:               pkix.Name{CommonName: "intermediate-ca"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+		KeyUsage:              x509.KeyUsageCertSign,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, leafTmpl, ca, &leafKey.PublicKey, caKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return base64.StdEncoding.EncodeToString(der)
+}
+
 func TestCheck(t *testing.T) {
 	certB64 := makeCertB64(t)
+	nonSelfSignedB64 := makeNonSelfSignedCertB64(t)
+	pemCert := "-----BEGIN CERTIFICATE-----\\nMIIBmock\\n-----END CERTIFICATE-----"
 
 	cases := []struct {
 		name           string
@@ -147,6 +196,34 @@ func TestCheck(t *testing.T) {
 			}`,
 			wantFailed:     true,
 			wantContainAny: []string{"x5c has 2 entries"},
+		},
+		{
+			// §6.1: the CA cert SHOULD be self-signed. A cert signed by a
+			// different CA is a WARN (SHOULD), not a hard failure.
+			name: "x5c cert not self-signed",
+			raw: `{
+				"spiffe_sequence": 1,
+				"spiffe_refresh_hint": 300,
+				"keys": [
+					{"kty": "EC", "use": "x509-svid", "x5c": ["` + nonSelfSignedB64 + `"]}
+				]
+			}`,
+			wantFailed:     false, // SHOULD-severity downgrade to WARN
+			wantContainAny: []string{"not self-signed"},
+		},
+		{
+			// §6.1: x5c is base64 DER, not PEM. PEM armor must be rejected
+			// with a precise message rather than an opaque base64 error.
+			name: "x5c is PEM not DER",
+			raw: `{
+				"spiffe_sequence": 1,
+				"spiffe_refresh_hint": 300,
+				"keys": [
+					{"kty": "EC", "use": "x509-svid", "x5c": ["` + pemCert + `"]}
+				]
+			}`,
+			wantFailed:     true,
+			wantContainAny: []string{"is PEM", "base64-encoded DER"},
 		},
 		{
 			name: "missing sequence and refresh hint",
