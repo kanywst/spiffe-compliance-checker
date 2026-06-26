@@ -42,6 +42,11 @@ type Report struct {
 	// (e.g. "scc id  spiffe://example.com/foo"). Left empty by callers that
 	// only want the assertions printed.
 	Subject string
+	// Artifact is the optional file path of the scanned input. When set, the
+	// SARIF renderer attaches it as each result's location URI so GitHub Code
+	// Scanning can map findings back to a file. Left empty for inputs that are
+	// not files (a SPIFFE ID string, a JWT token).
+	Artifact string
 }
 
 // Pass records a satisfied clause.

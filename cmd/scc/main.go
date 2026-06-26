@@ -124,7 +124,7 @@ func runX509(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "scc x509-svid: expected exactly one certificate path")
 		return 2
 	}
-	rep := &report.Report{Subject: "scc x509-svid  " + fs.Arg(0)}
+	rep := &report.Report{Subject: "scc x509-svid  " + fs.Arg(0), Artifact: fs.Arg(0)}
 	if err := x509svid.CheckFile(rep, fs.Arg(0)); err != nil {
 		fmt.Fprintf(stderr, "scc x509-svid: %v\n", err)
 		return 2
@@ -159,7 +159,7 @@ func runBundle(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "scc bundle: expected exactly one bundle path")
 		return 2
 	}
-	rep := &report.Report{Subject: "scc bundle  " + fs.Arg(0)}
+	rep := &report.Report{Subject: "scc bundle  " + fs.Arg(0), Artifact: fs.Arg(0)}
 	if err := bundle.CheckFile(rep, fs.Arg(0)); err != nil {
 		fmt.Fprintf(stderr, "scc bundle: %v\n", err)
 		return 2

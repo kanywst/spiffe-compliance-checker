@@ -129,3 +129,49 @@ func TestWriteSARIF(t *testing.T) {
 		}
 	}
 }
+
+func TestWriteSARIFLocations(t *testing.T) {
+	// A file-backed input carries an Artifact; results must point at it so
+	// GitHub Code Scanning can map findings to the file.
+	r := sampleReport()
+	r.Artifact = "certs/leaf.pem"
+	var buf strings.Builder
+	if err := r.WriteSARIF(&buf); err != nil {
+		t.Fatal(err)
+	}
+
+	var got struct {
+		Runs []struct {
+			Results []struct {
+				Locations []struct {
+					PhysicalLocation struct {
+						ArtifactLocation struct {
+							URI string `json:"uri"`
+						} `json:"artifactLocation"`
+					} `json:"physicalLocation"`
+				} `json:"locations"`
+			} `json:"results"`
+		} `json:"runs"`
+	}
+	if err := json.Unmarshal([]byte(buf.String()), &got); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, buf.String())
+	}
+	for _, res := range got.Runs[0].Results {
+		if len(res.Locations) != 1 {
+			t.Fatalf("result has %d locations, want 1", len(res.Locations))
+		}
+		if uri := res.Locations[0].PhysicalLocation.ArtifactLocation.URI; uri != "certs/leaf.pem" {
+			t.Errorf("location uri = %q, want certs/leaf.pem", uri)
+		}
+	}
+
+	// Without an Artifact, results must omit locations entirely (string/token
+	// inputs have no file to point at).
+	var noLoc strings.Builder
+	if err := sampleReport().WriteSARIF(&noLoc); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(noLoc.String(), "physicalLocation") {
+		t.Error("a report without Artifact must not emit physicalLocation")
+	}
+}
