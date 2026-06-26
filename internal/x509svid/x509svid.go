@@ -19,8 +19,8 @@ import (
 
 // RFC 5280 standard X.509 extension OIDs.
 var (
-	oidKeyUsage         = asn1.ObjectIdentifier{2, 5, 29, 15}
-	oidSubjectAltName   = asn1.ObjectIdentifier{2, 5, 29, 17}
+	oidKeyUsage       = asn1.ObjectIdentifier{2, 5, 29, 15}
+	oidSubjectAltName = asn1.ObjectIdentifier{2, 5, 29, 17}
 )
 
 // CheckFile reads a certificate from path and runs Check on it.
