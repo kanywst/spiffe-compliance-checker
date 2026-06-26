@@ -152,9 +152,22 @@ type sarifRuleConfig struct {
 }
 
 type sarifResult struct {
-	RuleID  string    `json:"ruleId"`
-	Level   string    `json:"level"`
-	Message sarifText `json:"message"`
+	RuleID    string          `json:"ruleId"`
+	Level     string          `json:"level"`
+	Message   sarifText       `json:"message"`
+	Locations []sarifLocation `json:"locations,omitempty"`
+}
+
+type sarifLocation struct {
+	PhysicalLocation sarifPhysicalLocation `json:"physicalLocation"`
+}
+
+type sarifPhysicalLocation struct {
+	ArtifactLocation sarifArtifactLocation `json:"artifactLocation"`
+}
+
+type sarifArtifactLocation struct {
+	URI string `json:"uri"`
 }
 
 type sarifText struct {
@@ -176,6 +189,18 @@ func (r *Report) WriteSARIF(w io.Writer) error {
 	rules := make([]sarifRule, 0)
 	seenRule := make(map[string]bool)
 	results := make([]sarifResult, 0)
+
+	// When the input was a file, attach it as the result location so GitHub
+	// Code Scanning can surface findings against that path. String/token
+	// inputs have no file, so results are emitted without a location.
+	var locations []sarifLocation
+	if r.Artifact != "" {
+		locations = []sarifLocation{{
+			PhysicalLocation: sarifPhysicalLocation{
+				ArtifactLocation: sarifArtifactLocation{URI: r.Artifact},
+			},
+		}}
+	}
 
 	for _, a := range r.Assertions {
 		id := ruleID(a.Clause)
@@ -210,9 +235,10 @@ func (r *Report) WriteSARIF(w io.Writer) error {
 			msg += " (" + a.Detail + ")"
 		}
 		results = append(results, sarifResult{
-			RuleID:  id,
-			Level:   level,
-			Message: sarifText{Text: msg},
+			RuleID:    id,
+			Level:     level,
+			Message:   sarifText{Text: msg},
+			Locations: locations,
 		})
 	}
 
