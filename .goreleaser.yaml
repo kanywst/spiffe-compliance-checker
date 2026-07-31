@@ -48,6 +48,10 @@ release:
     name: spiffe-compliance-checker
   draft: false
   prerelease: auto
+  # Lets a partially-failed release be re-run. Without this, re-uploading an
+  # asset that is already on the release fails with a 422 and goreleaser aborts
+  # before it gets to the Homebrew step.
+  replace_existing_artifacts: true
 
 # Formula (not Cask) to match the kanywst/homebrew-tap convention
 # documented in its README: "Formula (CLI / TUI binaries), Cask (GUI apps)".
