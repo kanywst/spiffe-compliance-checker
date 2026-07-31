@@ -57,7 +57,7 @@ jobs:
         # Ratchet: this floor only guards against regressions. Raise it as
         # coverage-improving PRs land so "CI green" keeps implying "well tested".
         env:
-          THRESHOLD: "58"
+          THRESHOLD: "72"
         run: |
           total=$(go tool cover -func=coverage.out | awk '/^total:/ {print substr($3, 1, length($3)-1)}')
           echo "total coverage: ${total}% (threshold ${THRESHOLD}%)"
