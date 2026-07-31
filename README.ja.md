@@ -89,7 +89,7 @@ $ echo $?
 | `WIT-SVID.md`                         | 必須の `kid` / `typ=wit+jwt` / `alg`、`cnf.jwk` の構造とアルゴリズム、禁止された `aud`、`nbf` / `iss` の規約 |
 | `SPIFFE_Trust_Domain_and_Bundle.md`   | JWKS shape、key ごとの `kty` / `use`、`spiffe_sequence` / `spiffe_refresh_hint`、x509 の `x5c`、bundle 全体での `kid` 一意性 |
 
-MUST 句は `spiffe/spiffe` main ブランチ 2026-08 時点 (spec commit `281c4b0`) を出典としている。
+MUST 句は `spiffe/spiffe` main ブランチの commit [`281c4b0`](https://github.com/spiffe/spiffe/commit/281c4b0) (2026-07-09) を出典としている。
 
 ### WIT-SVID について
 
