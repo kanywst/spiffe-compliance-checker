@@ -35,6 +35,7 @@ The CLI depends on [`charm.land/lipgloss/v2`](https://github.com/charmbracelet/l
 scc id        [--format text|json|sarif] <spiffe-id-string>
 scc x509-svid [--format text|json|sarif] <cert.pem | cert.der>
 scc jwt-svid  [--format text|json|sarif] <token>
+scc wit-svid  [--format text|json|sarif] <token>
 scc bundle    [--format text|json|sarif] <bundle.json>
 ```
 
@@ -85,9 +86,20 @@ $ echo $?
 | `SPIFFE-ID.md`                        | scheme, trust domain charset / length / case, path segments, total length, query / fragment      |
 | `X509-SVID.md`                        | URI SAN count, leaf vs signing Basic Constraints, Key Usage flags, EKU, leaf SPIFFE ID rules     |
 | `JWT-SVID.md`                         | `alg` whitelist, JWS Compact Serialization, `sub` / `aud` / `exp` presence, SPIFFE ID in `sub`   |
-| `SPIFFE_Trust_Domain_and_Bundle.md`   | JWKS shape, `kty` / `use` per key, `spiffe_sequence` / `spiffe_refresh_hint`, `x5c` for x509     |
+| `WIT-SVID.md`                         | mandatory `kid` / `typ=wit+jwt` / `alg`, `cnf.jwk` shape and algorithm, forbidden `aud`, `nbf` / `iss` rules |
+| `SPIFFE_Trust_Domain_and_Bundle.md`   | JWKS shape, `kty` / `use` per key, `spiffe_sequence` / `spiffe_refresh_hint`, `x5c` for x509, bundle-wide `kid` uniqueness |
 
-The MUST clauses are pulled directly from the `spiffe/spiffe` main branch as of 2026-05.
+The MUST clauses are pulled directly from the `spiffe/spiffe` main branch as of 2026-08 (spec commit `281c4b0`).
+
+### WIT-SVID
+
+The [WIT-SVID](https://github.com/spiffe/spiffe/blob/main/standards/WIT-SVID.md) is the third SVID type, added to the spec set in July 2026. It is a SPIFFE sub-profile of the IETF WIMSE Workload Identity Token: a JWS-signed JWT whose `cnf` claim binds the workload's public key to its SPIFFE ID. Unlike a JWT-SVID it is not a bearer token, so several rules invert — most visibly `aud`, which a JWT-SVID must carry and a WIT-SVID must not.
+
+`scc` checks the token's shape only. The proof of possession that a WIT-SVID must always be presented with is a runtime concern and stays out of scope, as does signature verification.
+
+`WIT-SVID.md` is marked **Stability: Incubating** in `spiffe/spiffe`, meaning breaking changes are avoided but may still be made in response to implementation experience. The other specs above are marked Stable. Expect the WIT-SVID clauses to move more than the rest.
+
+A trust bundle publishes WIT signing keys as JWK entries with `use` set to `wit-svid` (`WIT-SVID.md` §6.1), so `scc bundle` accepts that value alongside `x509-svid` and `jwt-svid`, requires a `kid` on each such entry, and checks that no two keyed entries share a `kid`.
 
 ## Related
 
