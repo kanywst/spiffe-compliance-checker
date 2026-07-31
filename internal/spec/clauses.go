@@ -116,6 +116,55 @@ var (
 		"exp MUST NOT be in the past (small leeway acceptable)"}
 )
 
+// WIT-SVID clauses (WIT-SVID.md). The WIT-SVID is a SPIFFE sub-profile of the
+// IETF WIMSE Workload Identity Token: a JWS-signed JWT that binds a workload's
+// public key to its SPIFFE ID. Unlike the JWT-SVID it is not a bearer token,
+// so several JWT-SVID rules are inverted here — most visibly `aud`, which the
+// JWT-SVID requires and the WIT-SVID forbids.
+//
+// WIT-SVID.md is marked Stability: Incubating in spiffe/spiffe. Per
+// standards/STABILITY.md that means breaking changes are avoided but may still
+// be made in response to real-world implementation experience, so expect this
+// block to move more than the Stable specs above.
+var (
+	WITCompactSerialization = Clause{"WIT-SVID.md", "§1", SeverityMUST,
+		"WIT-SVID MUST be a JWT encoded using JWS Compact Serialization"}
+	WITKidPresent = Clause{"WIT-SVID.md", "§2.1", SeverityMUST,
+		`kid header MUST be present (unlike the JWT-SVID, where it is optional)`}
+	WITTypWitJWT = Clause{"WIT-SVID.md", "§2.2", SeverityMUST,
+		`typ header MUST be present and set to "wit+jwt"`}
+	WITAlgWhitelist = Clause{"WIT-SVID.md", "§2.3", SeverityMUST,
+		"alg header MUST be present and one of RS{256,384,512}, PS{256,384,512}, ES{256,384,512}"}
+	// §2.4 is a SHOULD NOT, not the JWT-SVID's MUST NOT: the WIT-SVID inherits
+	// the WIMSE header model, where validators are told to ignore unknown
+	// parameters rather than reject the token.
+	WITHeaderNoAdditional = Clause{"WIT-SVID.md", "§2.4", SeveritySHOULD,
+		`JOSE header SHOULD NOT include parameters other than "alg", "kid", "typ"`}
+	WITSubPresent = Clause{"WIT-SVID.md", "§3.1", SeverityMUST,
+		"sub claim MUST be present and set to a SPIFFE ID"}
+	WITCnfPresent = Clause{"WIT-SVID.md", "§3.2", SeverityMUST,
+		"cnf claim MUST be present"}
+	WITCnfJWK = Clause{"WIT-SVID.md", "§3.2", SeverityMUST,
+		`cnf MUST carry a "jwk" object, per RFC 7800`}
+	WITCnfJWKPublic = Clause{"WIT-SVID.md", "§3.2", SeverityMUST,
+		"cnf.jwk MUST be a public key, never private or symmetric key material"}
+	WITCnfJWKAlg = Clause{"WIT-SVID.md", "§3.2", SeverityMUST,
+		"cnf.jwk.alg MUST be one of RS{256,384,512}, PS{256,384,512}, ES{256,384,512}"}
+	WITExpPresent = Clause{"WIT-SVID.md", "§3.4", SeverityMUST,
+		"exp claim MUST be present"}
+	WITExpNotInPast = Clause{"WIT-SVID.md", "§3.4", SeverityMUST,
+		"exp MUST NOT be in the past (small leeway acceptable)"}
+	WITNbfNotInFuture = Clause{"WIT-SVID.md", "§3.5", SeverityMUST,
+		"when nbf is present it MUST NOT be in the future"}
+	// §3.7: an OIDC-Discovery-compatible issuer invites a relying party to
+	// accept the WIT-SVID as a plain OIDC ID Token, skipping proof of
+	// possession entirely.
+	WITIssNotOIDC = Clause{"WIT-SVID.md", "§3.7", SeveritySHOULD,
+		"when iss is present it SHOULD NOT be an OpenID Connect Discovery compatible value"}
+	WITNoAud = Clause{"WIT-SVID.md", "§3.8", SeverityMUST,
+		"aud claim MUST NOT be included; scoping belongs in the proof of possession"}
+)
+
 // Bundle clauses (SPIFFE_Trust_Domain_and_Bundle.md, plus per-SVID-spec
 // bundle requirements).
 var (
@@ -124,7 +173,15 @@ var (
 	BundleKeyKTYSet = Clause{"SPIFFE_Trust_Domain_and_Bundle.md", "§4.2.1", SeverityMUST,
 		`each key MUST set "kty"`}
 	BundleKeyUseSet = Clause{"SPIFFE_Trust_Domain_and_Bundle.md", "§4.2.2", SeverityMUST,
-		`each key MUST set "use" to "x509-svid" or "jwt-svid"`}
+		`each key MUST set "use"`}
+	// §4.2.2 mandates only that "use" is set; its list of values is descriptive
+	// ("At the time of this writing...") and has not been updated since
+	// WIT-SVID.md §6.1 introduced "wit-svid". The same section tells consumers
+	// to ignore any JWK whose use they do not recognize, so an unknown value
+	// makes the entry inert rather than making the bundle non-compliant —
+	// hence SHOULD, which surfaces as a warning.
+	BundleKeyUseKnown = Clause{"SPIFFE_Trust_Domain_and_Bundle.md", "§4.2.2", SeveritySHOULD,
+		`"use" SHOULD name a defined SVID type ("x509-svid", "jwt-svid", "wit-svid"); consumers ignore unknown entries`}
 	BundleSequenceMonotonic = Clause{"SPIFFE_Trust_Domain_and_Bundle.md", "§4.1.1", SeveritySHOULD,
 		`"spiffe_sequence" SHOULD be set; when present MUST be a monotonically increasing integer`}
 	BundleRefreshHintInteger = Clause{"SPIFFE_Trust_Domain_and_Bundle.md", "§4.1.2", SeveritySHOULD,
@@ -137,4 +194,11 @@ var (
 		`x509-svid JWK entry MUST NOT set "kid"`}
 	BundleJWTKidPresent = Clause{"JWT-SVID.md", "§6.1", SeverityMUST,
 		`jwt-svid JWK entry MUST set "kid"`}
+	BundleWITKidPresent = Clause{"WIT-SVID.md", "§6.1", SeverityMUST,
+		`wit-svid JWK entry MUST set "kid"`}
+	// §6.1: "No other JWK, whether for JWT-SVID or WIT-SVID, may have the same
+	// value." x509-svid entries carry no kid at all (X509-SVID.md §6.1), so
+	// only the token-signing entries can collide.
+	BundleKIDUnique = Clause{"WIT-SVID.md", "§6.1", SeverityMUST,
+		`"kid" MUST be unique across the bundle, jwt-svid and wit-svid entries alike`}
 )

@@ -14,6 +14,7 @@ import (
 	"github.com/kanywst/spiffe-compliance-checker/internal/id"
 	"github.com/kanywst/spiffe-compliance-checker/internal/jwtsvid"
 	"github.com/kanywst/spiffe-compliance-checker/internal/report"
+	"github.com/kanywst/spiffe-compliance-checker/internal/witsvid"
 	"github.com/kanywst/spiffe-compliance-checker/internal/x509svid"
 )
 
@@ -31,11 +32,15 @@ Usage:
   scc id        [--format text|json|sarif] <spiffe-id-string>
   scc x509-svid [--format text|json|sarif] <cert.pem | cert.der>
   scc jwt-svid  [--format text|json|sarif] <token>
+  scc wit-svid  [--format text|json|sarif] <token>
   scc bundle    [--format text|json|sarif] <bundle.json>
 
 Each subcommand prints one line per checked clause. Exit code is 1 if any
 MUST clause fails, 0 otherwise. SHOULD violations are reported as WARN and
 do not affect the exit code.
+
+WIT-SVID.md is marked Incubating in spiffe/spiffe, so its clauses may still
+change; the other specs scc checks are Stable.
 
 --format selects the output: text (default, human-readable), json (a stable
 object for automation), or sarif (SARIF 2.1.0 for GitHub Code Scanning). The
@@ -66,6 +71,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runX509(rest, stdout, stderr)
 	case "jwt-svid":
 		return runJWT(rest, stdout, stderr)
+	case "wit-svid":
+		return runWIT(rest, stdout, stderr)
 	case "bundle":
 		return runBundle(rest, stdout, stderr)
 	default:
@@ -145,6 +152,22 @@ func runJWT(args []string, stdout, stderr io.Writer) int {
 	}
 	rep := &report.Report{Subject: "scc jwt-svid  <token>"}
 	jwtsvid.Check(rep, fs.Arg(0))
+	return emit(rep, *format, stdout, stderr)
+}
+
+func runWIT(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("wit-svid", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	format := addFormatFlag(fs)
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() != 1 {
+		fmt.Fprintln(stderr, "scc wit-svid: expected exactly one token")
+		return 2
+	}
+	rep := &report.Report{Subject: "scc wit-svid  <token>"}
+	witsvid.Check(rep, fs.Arg(0))
 	return emit(rep, *format, stdout, stderr)
 }
 

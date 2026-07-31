@@ -162,7 +162,11 @@ func TestCheck(t *testing.T) {
 			wantContainAny: []string{"kid absent"},
 		},
 		{
-			name: "unknown use value",
+			// §4.2.2 requires only that "use" is set, and tells consumers to
+			// ignore entries whose use they do not recognize. So an unknown
+			// value makes the entry inert rather than the bundle invalid:
+			// WARN, not FAIL.
+			name: "unknown use value warns but does not fail",
 			raw: `{
 				"spiffe_sequence": 1,
 				"spiffe_refresh_hint": 300,
@@ -170,8 +174,61 @@ func TestCheck(t *testing.T) {
 					{"kty": "RSA", "use": "tls"}
 				]
 			}`,
+			wantFailed:     false,
+			wantContainAny: []string{"use=tls", "consumers ignore unknown entries"},
+		},
+		{
+			// WIT-SVID.md §6.1 added a third use value after §4.2.2 was
+			// written. A spec-current bundle carrying WIT signing keys must
+			// not be reported as non-compliant.
+			name: "wit-svid entry accepted",
+			raw: `{
+				"spiffe_sequence": 1,
+				"spiffe_refresh_hint": 300,
+				"keys": [
+					{"kty": "EC", "use": "wit-svid", "kid": "w1", "crv": "P-256", "x": "a", "y": "b"}
+				]
+			}`,
+			wantFailed: false,
+		},
+		{
+			name: "wit-svid entry missing kid",
+			raw: `{
+				"spiffe_sequence": 1,
+				"spiffe_refresh_hint": 300,
+				"keys": [
+					{"kty": "EC", "use": "wit-svid", "crv": "P-256", "x": "a", "y": "b"}
+				]
+			}`,
 			wantFailed:     true,
-			wantContainAny: []string{"use=tls"},
+			wantContainAny: []string{`wit-svid JWK entry MUST set "kid"`, "kid absent"},
+		},
+		{
+			// WIT-SVID.md §6.1: "No other JWK, whether for JWT-SVID or
+			// WIT-SVID, may have the same value."
+			name: "duplicate kid across jwt-svid and wit-svid entries",
+			raw: `{
+				"spiffe_sequence": 1,
+				"spiffe_refresh_hint": 300,
+				"keys": [
+					{"kty": "RSA", "use": "jwt-svid", "kid": "shared", "n": "abc", "e": "AQAB"},
+					{"kty": "EC", "use": "wit-svid", "kid": "shared", "crv": "P-256", "x": "a", "y": "b"}
+				]
+			}`,
+			wantFailed:     true,
+			wantContainAny: []string{"duplicate kid(s): shared"},
+		},
+		{
+			name: "distinct kids across jwt-svid and wit-svid entries",
+			raw: `{
+				"spiffe_sequence": 1,
+				"spiffe_refresh_hint": 300,
+				"keys": [
+					{"kty": "RSA", "use": "jwt-svid", "kid": "j1", "n": "abc", "e": "AQAB"},
+					{"kty": "EC", "use": "wit-svid", "kid": "w1", "crv": "P-256", "x": "a", "y": "b"}
+				]
+			}`,
+			wantFailed: false,
 		},
 		{
 			name: "missing kty",
@@ -387,17 +444,16 @@ func TestCheck(t *testing.T) {
 			if err := bundle.Check(r, []byte(tc.raw)); err != nil {
 				t.Fatalf("Check error: %v", err)
 			}
-			if got := r.Failed(); got != tc.wantFailed {
-				var buf strings.Builder
-				r.Write(&buf)
-				t.Fatalf("Failed()=%v, want %v\nreport:\n%s", got, tc.wantFailed, buf.String())
-			}
-			if !tc.wantFailed {
-				return
-			}
+			// Render unconditionally: several cases assert on WARN text, which
+			// leaves Failed() false, so the substring checks must run for
+			// passing cases too.
 			var buf strings.Builder
 			r.Write(&buf)
 			out := buf.String()
+
+			if got := r.Failed(); got != tc.wantFailed {
+				t.Fatalf("Failed()=%v, want %v\nreport:\n%s", got, tc.wantFailed, out)
+			}
 			for _, sub := range tc.wantContainAny {
 				if !strings.Contains(out, sub) {
 					t.Errorf("expected report to mention %q\nreport:\n%s", sub, out)

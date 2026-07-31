@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/kanywst/spiffe-compliance-checker/internal/report"
@@ -53,15 +54,50 @@ func Check(r *report.Report, raw []byte) error {
 	checkSequence(r, b)
 	checkRefreshHint(r, b)
 
+	// Token-signing entries (jwt-svid, wit-svid) carry a kid that must be
+	// unique bundle-wide, so collect them as we go and assert once at the end.
+	kids := make([]string, 0, len(keys))
 	for i, k := range keys {
 		jwk, ok := k.(map[string]any)
 		if !ok {
 			r.Fail(spec.BundleKeyKTYSet, fmt.Sprintf("keys[%d] is not an object", i))
 			continue
 		}
-		checkJWK(r, i, jwk)
+		if kid := checkJWK(r, i, jwk); kid != "" {
+			kids = append(kids, kid)
+		}
 	}
+	checkKIDUniqueness(r, kids)
 	return nil
+}
+
+// checkKIDUniqueness enforces WIT-SVID.md §6.1: a kid MUST be unique within
+// the bundle, across jwt-svid and wit-svid entries alike. x509-svid entries
+// carry no kid at all (X509-SVID.md §6.1), so they cannot collide and are not
+// counted here. A bundle with no keyed entries has nothing to assert about.
+func checkKIDUniqueness(r *report.Report, kids []string) {
+	if len(kids) == 0 {
+		return
+	}
+	seen := make(map[string]int, len(kids))
+	var dupes []string
+	for _, kid := range kids {
+		seen[kid]++
+		if seen[kid] == 2 {
+			dupes = append(dupes, kid)
+		}
+	}
+	if len(dupes) == 0 {
+		noun := "entries"
+		if len(kids) == 1 {
+			noun = "entry"
+		}
+		r.Pass(spec.BundleKIDUnique,
+			fmt.Sprintf("%d keyed %s, all kids distinct", len(kids), noun))
+		return
+	}
+	sort.Strings(dupes)
+	r.Fail(spec.BundleKIDUnique, "duplicate kid(s): "+strings.Join(dupes, ", "))
 }
 
 func checkSequence(r *report.Report, b map[string]any) {
@@ -135,7 +171,9 @@ func isNegativeNumber(n json.Number) bool {
 // avoids the per-call slice allocation of strings.Fields+Join.
 var whitespaceStripper = strings.NewReplacer("\n", "", "\r", "", "\t", "", " ", "")
 
-func checkJWK(r *report.Report, idx int, jwk map[string]any) {
+// checkJWK evaluates one JWK entry and returns its kid, or "" when the entry
+// has no valid kid to contribute to the bundle-wide uniqueness check.
+func checkJWK(r *report.Report, idx int, jwk map[string]any) string {
 	keyTag := fmt.Sprintf("keys[%d]", idx)
 
 	switch v, ok := jwk["kty"]; {
@@ -154,28 +192,43 @@ func checkJWK(r *report.Report, idx int, jwk map[string]any) {
 		}
 	}
 
+	// §4.2.2 splits into two separate obligations: "use" MUST be set (a hard
+	// requirement on the producer), and its value SHOULD name an SVID type the
+	// reader knows about (an unknown value only makes the entry inert, since
+	// the same section tells consumers to ignore it).
 	useRaw, present := jwk["use"]
 	if !present {
 		r.Fail(spec.BundleKeyUseSet, keyTag+": use absent")
-		return
+		return ""
 	}
 	use, ok := useRaw.(string)
 	if !ok {
 		r.Fail(spec.BundleKeyUseSet,
 			fmt.Sprintf("%s: use is %T, want string", keyTag, useRaw))
-		return
+		return ""
 	}
+	if use == "" {
+		r.Fail(spec.BundleKeyUseSet, keyTag+": use is empty")
+		return ""
+	}
+	r.Pass(spec.BundleKeyUseSet, keyTag+": use="+use)
+
+	// The value itself is already reported on the clause above, so these
+	// assertions only carry the entry index.
 	switch use {
 	case "x509-svid":
-		r.Pass(spec.BundleKeyUseSet, keyTag+": use=x509-svid")
+		r.Pass(spec.BundleKeyUseKnown, keyTag)
 		checkX509Entry(r, keyTag, jwk)
+		return ""
 	case "jwt-svid":
-		r.Pass(spec.BundleKeyUseSet, keyTag+": use=jwt-svid")
-		checkJWTEntry(r, keyTag, jwk)
-	case "":
-		r.Fail(spec.BundleKeyUseSet, keyTag+": use is empty")
+		r.Pass(spec.BundleKeyUseKnown, keyTag)
+		return checkKidSet(r, keyTag, jwk, spec.BundleJWTKidPresent)
+	case "wit-svid":
+		r.Pass(spec.BundleKeyUseKnown, keyTag)
+		return checkKidSet(r, keyTag, jwk, spec.BundleWITKidPresent)
 	default:
-		r.Fail(spec.BundleKeyUseSet, keyTag+": use="+use)
+		r.Fail(spec.BundleKeyUseKnown, keyTag+": use="+use)
+		return ""
 	}
 }
 
@@ -256,21 +309,25 @@ func isSelfSigned(cert *x509.Certificate) bool {
 	return cert.CheckSignatureFrom(cert) == nil
 }
 
-func checkJWTEntry(r *report.Report, keyTag string, jwk map[string]any) {
-	// JWT-SVID.md §6.1: kid MUST be set.
+// checkKidSet enforces the "kid MUST be set" requirement that JWT-SVID.md §6.1
+// and WIT-SVID.md §6.1 each place on their own bundle entries; the caller
+// supplies the clause to cite. The kid is returned so Check can feed it into
+// the bundle-wide uniqueness assertion.
+func checkKidSet(r *report.Report, keyTag string, jwk map[string]any, c spec.Clause) string {
 	v, present := jwk["kid"]
 	if !present {
-		r.Fail(spec.BundleJWTKidPresent, keyTag+": kid absent")
-		return
+		r.Fail(c, keyTag+": kid absent")
+		return ""
 	}
 	kid, ok := v.(string)
 	switch {
 	case !ok:
-		r.Fail(spec.BundleJWTKidPresent,
-			fmt.Sprintf("%s: kid is %T, want string", keyTag, v))
+		r.Fail(c, fmt.Sprintf("%s: kid is %T, want string", keyTag, v))
 	case kid == "":
-		r.Fail(spec.BundleJWTKidPresent, keyTag+": kid is empty")
+		r.Fail(c, keyTag+": kid is empty")
 	default:
-		r.Pass(spec.BundleJWTKidPresent, keyTag+": kid="+kid)
+		r.Pass(c, keyTag+": kid="+kid)
+		return kid
 	}
+	return ""
 }
