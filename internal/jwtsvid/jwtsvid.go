@@ -4,14 +4,13 @@
 package jwtsvid
 
 import (
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/kanywst/spiffe-compliance-checker/internal/id"
+	"github.com/kanywst/spiffe-compliance-checker/internal/jose"
 	"github.com/kanywst/spiffe-compliance-checker/internal/report"
 	"github.com/kanywst/spiffe-compliance-checker/internal/spec"
 )
@@ -24,48 +23,18 @@ var allowedAlgs = map[string]bool{
 
 // Check evaluates JWT-SVID.md against token and appends assertions to r.
 func Check(r *report.Report, token string) {
-	token = strings.TrimSpace(token)
-	// §1: JWT-SVID MUST use JWS Compact Serialization. Compact is exactly
-	// three Base64URL parts joined by ".". JWS JSON Serialization is a JSON
-	// object, which would start with "{" and contain no dots in the same
-	// shape.
-	parts := strings.Split(token, ".")
-	if len(parts) != 3 || strings.HasPrefix(token, "{") {
-		r.Fail(spec.JWTCompactSerialization,
-			fmt.Sprintf("expected 3 dot-separated parts, got %d", len(parts)))
+	// §5.1: JWT-SVID MUST use JWS Compact Serialization. Any structural
+	// problem the decoder reports — wrong part count, JWS JSON Serialization,
+	// undecodable Base64URL — is a violation of that one clause.
+	header, payload, err := jose.Decode(token)
+	if err != nil {
+		r.Fail(spec.JWTCompactSerialization, err.Error())
 		return
 	}
 	r.Pass(spec.JWTCompactSerialization, "")
 
-	header, err := decodePart(parts[0])
-	if err != nil {
-		r.Fail(spec.JWTCompactSerialization, fmt.Sprintf("header decode: %v", err))
-		return
-	}
-	payload, err := decodePart(parts[1])
-	if err != nil {
-		r.Fail(spec.JWTCompactSerialization, fmt.Sprintf("payload decode: %v", err))
-		return
-	}
-
 	checkHeader(r, header)
 	checkClaims(r, payload)
-}
-
-func decodePart(s string) (map[string]any, error) {
-	raw, err := base64.RawURLEncoding.DecodeString(s)
-	if err != nil {
-		// Some encoders include padding; tolerate that case.
-		raw, err = base64.URLEncoding.DecodeString(s)
-		if err != nil {
-			return nil, err
-		}
-	}
-	var out map[string]any
-	if err := json.Unmarshal(raw, &out); err != nil {
-		return nil, err
-	}
-	return out, nil
 }
 
 func checkHeader(r *report.Report, h map[string]any) {
@@ -167,7 +136,7 @@ func checkClaims(r *report.Report, p map[string]any) {
 		return
 	}
 	r.Pass(spec.JWTExpPresent, "")
-	exp, err := asUnix(expRaw)
+	exp, err := jose.UnixClaim("exp", expRaw)
 	if err != nil {
 		r.Fail(spec.JWTExpNotInPast, fmt.Sprintf("exp invalid: %v", err))
 		return
@@ -211,17 +180,4 @@ func extractAud(p map[string]any) (values []string, valid, present bool) {
 		return out, true, true
 	}
 	return nil, false, true
-}
-
-func asUnix(v any) (int64, error) {
-	switch x := v.(type) {
-	case float64:
-		return int64(x), nil
-	case int64:
-		return x, nil
-	case int:
-		return int64(x), nil
-	default:
-		return 0, fmt.Errorf("exp must be numeric, got %T", v)
-	}
 }
