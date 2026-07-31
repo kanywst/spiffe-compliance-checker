@@ -71,10 +71,8 @@ func Check(r *report.Report, raw []byte) error {
 	return nil
 }
 
-// checkKIDUniqueness enforces WIT-SVID.md §6.1: a kid MUST be unique within
-// the bundle, across jwt-svid and wit-svid entries alike. x509-svid entries
-// carry no kid at all (X509-SVID.md §6.1), so they cannot collide and are not
-// counted here. A bundle with no keyed entries has nothing to assert about.
+// checkKIDUniqueness enforces WIT-SVID.md §6.1. x509-svid entries carry no kid
+// at all (X509-SVID.md §6.1), so they cannot collide and are not counted here.
 func checkKIDUniqueness(r *report.Report, kids []string) {
 	if len(kids) == 0 {
 		return
@@ -192,10 +190,9 @@ func checkJWK(r *report.Report, idx int, jwk map[string]any) string {
 		}
 	}
 
-	// §4.2.2 splits into two separate obligations: "use" MUST be set (a hard
-	// requirement on the producer), and its value SHOULD name an SVID type the
-	// reader knows about (an unknown value only makes the entry inert, since
-	// the same section tells consumers to ignore it).
+	// §4.2.2 carries two obligations: "use" MUST be set, and its value SHOULD
+	// name a known SVID type. See the clause table for why the second is only
+	// a SHOULD.
 	useRaw, present := jwk["use"]
 	if !present {
 		r.Fail(spec.BundleKeyUseSet, keyTag+": use absent")
@@ -310,9 +307,8 @@ func isSelfSigned(cert *x509.Certificate) bool {
 }
 
 // checkKidSet enforces the "kid MUST be set" requirement that JWT-SVID.md §6.1
-// and WIT-SVID.md §6.1 each place on their own bundle entries; the caller
-// supplies the clause to cite. The kid is returned so Check can feed it into
-// the bundle-wide uniqueness assertion.
+// and WIT-SVID.md §6.1 each place on their own entries; the caller supplies the
+// clause to cite. The kid is returned to feed the uniqueness assertion.
 func checkKidSet(r *report.Report, keyTag string, jwk map[string]any, c spec.Clause) string {
 	v, present := jwk["kid"]
 	if !present {

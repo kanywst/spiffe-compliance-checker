@@ -1,9 +1,8 @@
 // Package witsvid checks a WIT-SVID token against the MUST clauses of
-// WIT-SVID.md. A WIT-SVID is a SPIFFE sub-profile of the IETF WIMSE Workload
-// Identity Token: a JWS-signed JWT whose cnf claim binds the workload's public
-// key to its SPIFFE ID. Signature verification and the proof of possession
-// that a WIT-SVID must always be presented with are runtime concerns and
-// deliberately out of scope; this checks the shape of the token only.
+// WIT-SVID.md — a JWS-signed JWT whose cnf claim binds the workload's public
+// key to its SPIFFE ID. Signature verification and the proof of possession a
+// WIT-SVID must be presented with are runtime concerns, intentionally out of
+// scope; this is a structural conformance checker.
 package witsvid
 
 import (
@@ -19,34 +18,29 @@ import (
 	"github.com/kanywst/spiffe-compliance-checker/internal/spec"
 )
 
-// allowedAlgs is the table from §2.3, reused by §3.2 for cnf.jwk.alg. It
-// happens to match the JWT-SVID set today, but the two specs enumerate it
-// independently, so the checkers keep independent copies.
+// allowedAlgs is the §2.3 table, reused by §3.2 for cnf.jwk.alg. It matches
+// the JWT-SVID set today, but the two specs enumerate it independently, so the
+// checkers keep independent copies.
 var allowedAlgs = map[string]bool{
 	"RS256": true, "RS384": true, "RS512": true,
 	"PS256": true, "PS384": true, "PS512": true,
 	"ES256": true, "ES384": true, "ES512": true,
 }
 
-// permittedHeaders is the set §2.4 describes; anything else is an "additional
-// header parameter" that implementations SHOULD NOT emit.
 var permittedHeaders = map[string]bool{"alg": true, "kid": true, "typ": true}
 
-// privateJWKParams are the JWK members that carry private or symmetric key
-// material (RFC 7518 §6.2.2, §6.3.2, §6.4). RFC 7800 — which WIT-SVID.md §3.2
-// incorporates by reference — defines cnf.jwk as holding the *public* key, so
-// any of these appearing in a token is key leakage.
+// privateJWKParams are the JWK members carrying private or symmetric key
+// material (RFC 7518 §6.2.2, §6.3.2, §6.4). RFC 7800, which §3.2 incorporates
+// by reference, defines cnf.jwk as the public key, so any of these is leakage.
 var privateJWKParams = []string{"d", "p", "q", "dp", "dq", "qi", "oth", "k"}
 
 // clockSkewLeeway is the tolerance applied to exp and nbf. §3.4 permits
-// "seconds to at most a couple of minutes" for clock skew; 30s is the same
-// allowance the JWT-SVID checker uses.
+// "seconds to at most a couple of minutes".
 const clockSkewLeeway = 30 * time.Second
 
 // Check evaluates WIT-SVID.md against token and appends assertions to r.
 func Check(r *report.Report, token string) {
-	// §1: a WIT-SVID is a JWT using JWS Compact Serialization. Any structural
-	// problem the decoder reports violates that clause.
+	// §1: any structural problem the decoder reports violates this one clause.
 	header, payload, err := jose.Decode(token)
 	if err != nil {
 		r.Fail(spec.WITCompactSerialization, err.Error())
@@ -58,53 +52,51 @@ func Check(r *report.Report, token string) {
 	checkClaims(r, payload)
 }
 
+// stringMember reads m[name] as a non-empty string, recording the matching
+// failure against c when it is absent, the wrong type, or blank. kind is
+// "header" or "claim" and only phrases the absence message. ok reports whether
+// the caller should evaluate the value further; the caller records the Pass,
+// since only it knows what detail to attach.
+func stringMember(r *report.Report, m map[string]any, name, kind string, c spec.Clause) (string, bool) {
+	v, present := m[name]
+	if !present {
+		r.Fail(c, fmt.Sprintf("%s %s absent", name, kind))
+		return "", false
+	}
+	s, isString := v.(string)
+	switch {
+	case !isString:
+		r.Fail(c, fmt.Sprintf("%s is %T, want string", name, v))
+	case s == "":
+		r.Fail(c, name+" is empty")
+	default:
+		return s, true
+	}
+	return "", false
+}
+
 func checkHeader(r *report.Report, h map[string]any) {
-	// §2.1: kid MUST be present, and is a case-sensitive string.
-	switch v, present := h["kid"]; {
-	case !present:
-		r.Fail(spec.WITKidPresent, "kid header absent")
-	default:
-		kid, ok := v.(string)
-		switch {
-		case !ok:
-			r.Fail(spec.WITKidPresent, fmt.Sprintf("kid is %T, want string", v))
-		case kid == "":
-			r.Fail(spec.WITKidPresent, "kid is empty")
-		default:
-			r.Pass(spec.WITKidPresent, "kid="+kid)
-		}
+	// §2.1: kid MUST be present.
+	if kid, ok := stringMember(r, h, "kid", "header", spec.WITKidPresent); ok {
+		r.Pass(spec.WITKidPresent, "kid="+kid)
 	}
 
-	// §2.2: typ MUST be present and set to "wit+jwt". This is what keeps a
-	// WIT-SVID from being mistaken for a JWT-SVID or an OIDC ID token.
-	switch v, present := h["typ"]; {
-	case !present:
-		r.Fail(spec.WITTypWitJWT, "typ header absent")
-	default:
-		typ, ok := v.(string)
-		switch {
-		case !ok:
-			r.Fail(spec.WITTypWitJWT, fmt.Sprintf("typ is %T, want string", v))
-		case typ != "wit+jwt":
-			r.Fail(spec.WITTypWitJWT, fmt.Sprintf("typ=%q", typ))
-		default:
+	// §2.2: typ MUST be "wit+jwt". This is what keeps a WIT-SVID from being
+	// mistaken for a JWT-SVID or an OIDC ID token.
+	if typ, ok := stringMember(r, h, "typ", "header", spec.WITTypWitJWT); ok {
+		if typ == "wit+jwt" {
 			r.Pass(spec.WITTypWitJWT, "typ=wit+jwt")
+		} else {
+			r.Fail(spec.WITTypWitJWT, fmt.Sprintf("typ=%q", typ))
 		}
 	}
 
-	// §2.3: alg MUST be present and one of the nine listed values.
-	switch v, present := h["alg"]; {
-	case !present:
-		r.Fail(spec.WITAlgWhitelist, "alg header absent")
-	default:
-		alg, ok := v.(string)
-		switch {
-		case !ok:
-			r.Fail(spec.WITAlgWhitelist, fmt.Sprintf("alg is %T, want string", v))
-		case !allowedAlgs[alg]:
-			r.Fail(spec.WITAlgWhitelist, fmt.Sprintf("alg=%q", alg))
-		default:
+	// §2.3: alg MUST be one of the nine listed values.
+	if alg, ok := stringMember(r, h, "alg", "header", spec.WITAlgWhitelist); ok {
+		if allowedAlgs[alg] {
 			r.Pass(spec.WITAlgWhitelist, "alg="+alg)
+		} else {
+			r.Fail(spec.WITAlgWhitelist, fmt.Sprintf("alg=%q", alg))
 		}
 	}
 
@@ -115,13 +107,12 @@ func checkHeader(r *report.Report, h map[string]any) {
 			extra = append(extra, k)
 		}
 	}
-	if len(extra) > 0 {
-		sort.Strings(extra)
-		r.Fail(spec.WITHeaderNoAdditional,
-			"additional header(s): "+strings.Join(extra, ", "))
-	} else {
+	if len(extra) == 0 {
 		r.Pass(spec.WITHeaderNoAdditional, "")
+		return
 	}
+	sort.Strings(extra)
+	r.Fail(spec.WITHeaderNoAdditional, "additional header(s): "+strings.Join(extra, ", "))
 }
 
 func checkClaims(r *report.Report, p map[string]any) {
@@ -131,8 +122,8 @@ func checkClaims(r *report.Report, p map[string]any) {
 	checkNbf(r, p)
 	checkIss(r, p)
 
-	// §3.8: aud MUST NOT be included. A WIT-SVID is not a bearer token, so
-	// scoping it to a recipient is the proof of possession's job.
+	// §3.8: aud MUST NOT be included; scoping a WIT-SVID to a recipient is the
+	// proof of possession's job, not the token's.
 	if v, present := p["aud"]; present {
 		r.Fail(spec.WITNoAud, fmt.Sprintf("aud=%v", v))
 	} else {
@@ -142,39 +133,29 @@ func checkClaims(r *report.Report, p map[string]any) {
 
 func checkSub(r *report.Report, p map[string]any) {
 	// §3.1: sub MUST be present and set to the workload's SPIFFE ID.
-	v, present := p["sub"]
-	if !present {
-		r.Fail(spec.WITSubPresent, "sub claim absent")
+	sub, ok := stringMember(r, p, "sub", "claim", spec.WITSubPresent)
+	if !ok {
 		return
 	}
-	sub, ok := v.(string)
-	switch {
-	case !ok:
-		r.Fail(spec.WITSubPresent, fmt.Sprintf("sub claim is %T, want string", v))
-	case sub == "":
-		r.Fail(spec.WITSubPresent, "sub claim is empty")
-	default:
-		r.Pass(spec.WITSubPresent, "sub="+sub)
-		// Propagate the SPIFFE-ID clauses through the sub value.
-		id.Check(r, sub)
-	}
+	r.Pass(spec.WITSubPresent, "sub="+sub)
+	id.Check(r, sub)
 }
 
 func checkCnf(r *report.Report, p map[string]any) {
-	// §3.2: cnf MUST be present.
+	// §3.2: cnf MUST be present, and its structure MUST follow RFC 7800 —
+	// two obligations from one section, so two clauses.
 	v, present := p["cnf"]
 	if !present {
 		r.Fail(spec.WITCnfPresent, "cnf claim absent")
 		return
 	}
-	cnf, ok := v.(map[string]any)
-	if !ok {
-		r.Fail(spec.WITCnfPresent, fmt.Sprintf("cnf is %T, want object", v))
-		return
-	}
 	r.Pass(spec.WITCnfPresent, "")
 
-	// §3.2 via RFC 7800: the confirmation is expressed as a "jwk" member.
+	cnf, ok := v.(map[string]any)
+	if !ok {
+		r.Fail(spec.WITCnfJWK, fmt.Sprintf("cnf is %T, want object", v))
+		return
+	}
 	jwkRaw, present := cnf["jwk"]
 	if !present {
 		r.Fail(spec.WITCnfJWK, "cnf.jwk absent")
@@ -187,9 +168,6 @@ func checkCnf(r *report.Report, p map[string]any) {
 	}
 	r.Pass(spec.WITCnfJWK, "")
 
-	// RFC 7800 defines cnf.jwk as the public key. Private or symmetric
-	// material here would be exfiltrated to every validator that sees the
-	// token, so check before anything else touches the key.
 	var leaked []string
 	for _, param := range privateJWKParams {
 		if _, ok := jwk[param]; ok {
@@ -204,7 +182,9 @@ func checkCnf(r *report.Report, p map[string]any) {
 		r.Pass(spec.WITCnfJWKPublic, "")
 	}
 
-	// §3.2: cnf.jwk.alg MUST be one of the nine listed values.
+	// §3.2: cnf.jwk.alg MUST be one of the nine listed values. Spelled out
+	// rather than routed through stringMember so the detail names the full
+	// path a reader would grep the token for.
 	algRaw, present := jwk["alg"]
 	if !present {
 		r.Fail(spec.WITCnfJWKAlg, "cnf.jwk.alg absent")
@@ -285,9 +265,8 @@ func checkIss(r *report.Report, p map[string]any) {
 }
 
 // isOIDCDiscoverable reports whether s could serve as an OpenID Connect
-// Discovery issuer. OIDC Discovery 1.0 §2 requires the issuer identifier to be
-// an https URL with no query or fragment, which is exactly the shape §3.7 warns
-// against; a spiffe:// ID or an opaque string cannot be resolved that way.
+// Discovery issuer: OIDC Discovery 1.0 §2 requires an https URL with no query
+// or fragment. A spiffe:// ID or an opaque string cannot be resolved that way.
 func isOIDCDiscoverable(s string) bool {
 	u, err := url.Parse(s)
 	if err != nil {

@@ -1,8 +1,7 @@
 // Package jose decodes a JWS Compact Serialization token into its JOSE header
-// and claim set. Both the JWT-SVID and WIT-SVID checkers need the same
-// structural decode before they can evaluate their own spec clauses, so the
-// split lives here rather than being duplicated per checker. Signature
-// verification is deliberately out of scope: this only splits and decodes.
+// and claim set. The jwtsvid and witsvid checkers both need this before they
+// can evaluate their own spec clauses, so it lives here rather than being
+// duplicated. Signature verification is out of scope.
 package jose
 
 import (
@@ -50,9 +49,8 @@ func decodePart(s string) (map[string]any, error) {
 }
 
 // UnixClaim reads a numeric date claim (exp, nbf, iat) as a Unix timestamp.
-// JSON numbers always decode to float64, but callers that assemble claim maps
-// directly — tests, mostly — may supply a Go integer, so both are accepted.
-// name is only used to phrase the error.
+// JSON numbers always decode to float64; the integer cases are for callers
+// that assemble claim maps directly. name only phrases the error.
 func UnixClaim(name string, v any) (int64, error) {
 	switch x := v.(type) {
 	case float64:
