@@ -89,7 +89,7 @@ $ echo $?
 | `WIT-SVID.md`                         | mandatory `kid` / `typ=wit+jwt` / `alg`, `cnf.jwk` shape and algorithm, forbidden `aud`, `nbf` / `iss` rules |
 | `SPIFFE_Trust_Domain_and_Bundle.md`   | JWKS shape, `kty` / `use` per key, `spiffe_sequence` / `spiffe_refresh_hint`, `x5c` for x509, bundle-wide `kid` uniqueness |
 
-The MUST clauses are pulled directly from the `spiffe/spiffe` main branch as of 2026-08 (spec commit `281c4b0`).
+The MUST clauses are pulled directly from the `spiffe/spiffe` main branch at commit [`281c4b0`](https://github.com/spiffe/spiffe/commit/281c4b0) (2026-07-09).
 
 ### WIT-SVID
 
