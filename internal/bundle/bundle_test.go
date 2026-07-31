@@ -175,7 +175,7 @@ func TestCheck(t *testing.T) {
 				]
 			}`,
 			wantFailed:     false,
-			wantContainAny: []string{"use=tls", "consumers ignore unknown entries"},
+			wantContainAny: []string{"use=tls", `"use" SHOULD name a defined SVID type`},
 		},
 		{
 			// WIT-SVID.md §6.1 added a third use value after §4.2.2 was
