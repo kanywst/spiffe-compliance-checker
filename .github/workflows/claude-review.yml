@@ -1,0 +1,101 @@
+name: Claude review
+
+# CI answers "does it build and do the tests pass". This asks the question no
+# script here can. It reviews, it does not gate: nothing here is a required
+# check.
+#
+# The action refuses to run when this file differs from the copy on the default
+# branch, so a pull request cannot rewrite its own reviewer. The cost is that
+# any change to this file, including the one that added it, goes unreviewed by
+# Claude until it is merged.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions: {}
+
+# One review per pull request. A rapid re-push cancels the run it superseded
+# rather than paying for a review of a diff that no longer exists.
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    # A pull request from a fork gets no secrets, so the job would fail on
+    # authentication rather than say anything useful. Drafts are skipped until
+    # they are marked ready, which is what the ready_for_review trigger is for.
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: write
+      # Required by the action's default GitHub App authentication.
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      # Without the secret the action exits successfully having reviewed
+      # nothing, which is worse than failing: the check goes green and the
+      # pull request looks reviewed. Fail here instead, where the reason is
+      # legible.
+      - name: Require the token
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          if [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
+            echo "::error::CLAUDE_CODE_OAUTH_TOKEN is not set. Generate one with 'claude setup-token', then: gh secret set CLAUDE_CODE_OAUTH_TOKEN"
+            exit 1
+          fi
+
+      - uses: anthropics/claude-code-action@6b082c41935b4c8a3b8b0ef85ba4ba4d9eeb8975 # v1
+        with:
+          # A subscription token, not an API key: runs against the Claude plan
+          # instead of API credits. Generate it with `claude setup-token`.
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR: ${{ github.event.pull_request.number }}
+
+            scc is a static compliance checker for SPIFFE artifacts. Given a SPIFFE ID, an
+            X.509-SVID, a JWT-SVID or a trust bundle, it reports which MUST and MUST NOT
+            clauses the artifact satisfies, citing the document and section behind every
+            line.
+
+            Do not repeat what CI already does. lint, fmt, build, test, coverage and
+            vulncheck run on this PR already.
+
+            Look for what only a reader can catch:
+
+            1. False passes. A check that wrongly reports compliance tells someone a broken
+               artifact is fine, which is the opposite of the point. Weigh this above every
+               other concern, including a false failure.
+
+            2. Citations. Every check has to point at real clause text. A citation that is
+               paraphrased, points at the wrong section, or asserts something stricter than
+               the spec says is a defect even when the code is correct.
+
+            3. Scope. This is static analysis of artifact shape. Workload attestation, key
+               rotation, Workload API behaviour and signature verification against a
+               particular bundle are deliberately out of scope, so a change that starts
+               doing them is worth naming.
+
+            4. Untrusted input. Parsers take hostile artifacts by definition, so a malformed
+               certificate, token or bundle must produce a finding rather than a panic.
+
+            5. SPIFFE ID rules, which are easy to get subtly wrong: scheme, trust domain
+               charset and case, path segments, and the absence of a port or userinfo.
+
+            Post findings as inline comments on the lines they concern. Use one
+            top-level comment for the summary. Be specific and cite
+            `file:line`. If the diff is clean against all of the above, say so
+            in one line rather than manufacturing nits.
+
+          claude_args: |
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
