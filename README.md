@@ -41,7 +41,7 @@ cosign verify-blob checksums.txt \
   --certificate-identity-regexp '^https://github\.com/kanywst/spiffe-compliance-checker/\.github/workflows/release\.yml@refs/tags/v'
 
 # 2. Then check the archive against the now-trusted checksum list
-sha256sum --check --ignore-missing checksums.txt
+sha256sum --check --ignore-missing checksums.txt   # macOS: shasum -a 256 -c
 ```
 
 ## Usage
