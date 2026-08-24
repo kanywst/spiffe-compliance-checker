@@ -48,14 +48,18 @@ sboms:
 # by digest, so verifying the signature and then the digest chains trust to the
 # binary. Keyless means no long-lived key — the identity is the workflow itself,
 # recorded in Rekor, which is why the job needs id-token: write.
+#
+# The signature is a Sigstore bundle (certificate and signature in one file).
+# cosign 3 deprecated the older --output-signature / --output-certificate pair
+# and errors out unless --bundle is given, so there is no two-file variant to
+# fall back to.
 signs:
   - id: checksums
     cmd: cosign
-    certificate: "${artifact}.pem"
+    signature: "${artifact}.sigstore.json"
     args:
       - sign-blob
-      - "--output-certificate=${certificate}"
-      - "--output-signature=${signature}"
+      - "--bundle=${signature}"
       - "${artifact}"
       - "--yes"
     artifacts: checksum

@@ -31,13 +31,12 @@ CLI は色付き出力に [`charm.land/lipgloss/v2`](https://github.com/charmbra
 
 ### リリースの検証
 
-各リリースには archive ごとの SPDX 2.3 SBOM (`<archive>.tar.gz.sbom.json`) と、`checksums.txt` に対する keyless [cosign](https://github.com/sigstore/cosign) 署名が付く。keyless なので取得すべき公開鍵は存在しない。署名者の identity は release workflow そのもので、Sigstore の透明性ログに記録されている。
+各リリースには archive ごとの SPDX 2.3 SBOM (`<archive>.tar.gz.sbom.json`) と、`checksums.txt` に対する keyless [cosign](https://github.com/sigstore/cosign) 署名が Sigstore bundle (`checksums.txt.sigstore.json`) として付く。keyless なので取得すべき公開鍵は存在しない。署名者の identity は release workflow そのもので、Sigstore の透明性ログに記録されている。
 
 ```bash
 # 1. checksums.txt がこのリポジトリの release workflow で署名されたことを検証する
 cosign verify-blob checksums.txt \
-  --certificate checksums.txt.pem \
-  --signature checksums.txt.sig \
+  --bundle checksums.txt.sigstore.json \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   --certificate-identity-regexp '^https://github\.com/kanywst/spiffe-compliance-checker/\.github/workflows/release\.yml@refs/tags/v'
 
