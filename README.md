@@ -8,9 +8,9 @@
 
 ![demo](./assets/demo.gif)
 
-A static compliance checker for [SPIFFE](https://spiffe.io) artifacts. Pass `scc` a SPIFFE ID, an X.509-SVID certificate, a JWT-SVID token, or a trust bundle, and it tells you which MUST / MUST NOT clauses from the [SPIFFE spec](https://github.com/spiffe/spiffe/tree/main/standards) the artifact satisfies or violates. Every output line cites the source document and section so a failed check reads as a spec walkthrough.
+A static compliance checker for [SPIFFE](https://spiffe.io) artifacts. Pass `scc` a SPIFFE ID, an X.509-SVID certificate, a JWT-SVID or WIT-SVID token, a trust bundle, or a bundle map, and it tells you which MUST / MUST NOT clauses from the [SPIFFE spec](https://github.com/spiffe/spiffe/tree/main/standards) the artifact satisfies or violates. Every output line cites the source document and section so a failed check reads as a spec walkthrough.
 
-SPIFFE is the CNCF spec set that defines `spiffe://...` workload identities and the SVIDs that carry them. It backs SPIRE, Istio's mTLS layer, Cilium's mutual auth, and many in-house implementations. The spec lives across eight markdown files in [spiffe/spiffe](https://github.com/spiffe/spiffe) and ships without an official conformance suite. `scc` covers the slice of compliance that is checkable from outside: the shape of the artifacts themselves. Runtime concerns (workload attestation, key rotation, Workload API endpoint behaviour, signature verification against a specific bundle) are out of scope.
+SPIFFE is the CNCF spec set that defines `spiffe://...` workload identities and the SVIDs that carry them. It backs SPIRE, Istio's mTLS layer, Cilium's mutual auth, and many in-house implementations. The spec lives across eleven markdown files in [spiffe/spiffe](https://github.com/spiffe/spiffe) and ships without an official conformance suite. `scc` covers the slice of compliance that is checkable from outside: the shape of the artifacts themselves. Runtime concerns (workload attestation, key rotation, Workload API endpoint behaviour, signature verification against a specific bundle) are out of scope.
 
 ## Install
 
@@ -32,11 +32,12 @@ The CLI depends on [`charm.land/lipgloss/v2`](https://github.com/charmbracelet/l
 ## Usage
 
 ```text
-scc id        [--format text|json|sarif] <spiffe-id-string>
-scc x509-svid [--format text|json|sarif] <cert.pem | cert.der>
-scc jwt-svid  [--format text|json|sarif] <token>
-scc wit-svid  [--format text|json|sarif] <token>
-scc bundle    [--format text|json|sarif] <bundle.json>
+scc id         [--format text|json|sarif] <spiffe-id-string>
+scc x509-svid  [--format text|json|sarif] <cert.pem | cert.der>
+scc jwt-svid   [--format text|json|sarif] <token>
+scc wit-svid   [--format text|json|sarif] <token>
+scc bundle     [--format text|json|sarif] <bundle.json>
+scc bundle-map [--format text|json|sarif] <bundle-map.json>
 ```
 
 Each subcommand prints one line per checked clause and exits non-zero if any MUST clause fails. SHOULD violations surface as `WARN` and do not change the exit code. Colors render only when stdout is a TTY and `NO_COLOR` is unset, so the same binary is safe in scripts and CI logs.
@@ -88,8 +89,9 @@ $ echo $?
 | `JWT-SVID.md`                         | `alg` whitelist, JWS Compact Serialization, `sub` / `aud` / `exp` presence, SPIFFE ID in `sub`   |
 | `WIT-SVID.md`                         | mandatory `kid` / `typ=wit+jwt` / `alg`, `cnf.jwk` shape and algorithm, forbidden `aud`, `nbf` / `iss` rules |
 | `SPIFFE_Trust_Domain_and_Bundle.md`   | JWKS shape, `kty` / `use` per key, `spiffe_sequence` / `spiffe_refresh_hint`, `x5c` for x509, bundle-wide `kid` uniqueness |
+| `SPIFFE_Trust_Domain_and_Bundle.md` §5 | bundle map: `trust_domains` presence, trust domain name validity and uniqueness, each embedded bundle, omitted `spiffe_refresh_hint` |
 
-The MUST clauses are pulled directly from the `spiffe/spiffe` main branch at commit [`281c4b0`](https://github.com/spiffe/spiffe/commit/281c4b0) (2026-07-09).
+The MUST clauses are pulled directly from the `spiffe/spiffe` main branch at commit [`dc4e9d9`](https://github.com/spiffe/spiffe/commit/dc4e9d9) (2026-08-03).
 
 ### WIT-SVID
 
@@ -100,6 +102,17 @@ The [WIT-SVID](https://github.com/spiffe/spiffe/blob/main/standards/WIT-SVID.md)
 `WIT-SVID.md` is marked **Stability: Incubating** in `spiffe/spiffe`, meaning breaking changes are avoided but may still be made in response to implementation experience. The other specs above are marked Stable. Expect the WIT-SVID clauses to move more than the rest.
 
 A trust bundle publishes WIT signing keys as JWK entries with `use` set to `wit-svid` (`WIT-SVID.md` §6.1), so `scc bundle` accepts that value alongside `x509-svid` and `jwt-svid`, requires a `kid` on each such entry, and checks that no two keyed entries share a `kid`.
+
+### Bundle maps
+
+A [SPIFFE Bundle Map](https://github.com/spiffe/spiffe/blob/main/standards/SPIFFE_Trust_Domain_and_Bundle.md#5-spiffe-bundle-map) (`SPIFFE_Trust_Domain_and_Bundle.md` §5) is a `trust_domains` object holding one bundle per trust domain. `scc bundle-map` runs the full `scc bundle` sweep over every embedded bundle, attributing each assertion to the trust domain it came from, and layers the map's own clauses on top:
+
+- `trust_domains` MUST be set, and MAY be empty.
+- Each key MUST be a valid trust domain name. §5.1.1 defers to `SPIFFE-ID.md` §2 for that, so the same clauses that check the authority of a SPIFFE ID are reused verbatim on the keys.
+- Trust domain names MUST be unique. This is the one clause a plain JSON unmarshal cannot enforce — most parsers, Go's included, silently keep the last of a duplicated key — so `scc` re-walks the raw bytes at token level. §6.3 explains the stakes: a duplicate name means the wrong trust anchors can end up validating an SVID.
+- Bundles inside a map SHOULD omit `spiffe_refresh_hint`, the inverse of the standalone rule, because the hint applies to the map as a whole.
+
+`kid` uniqueness stays scoped to a single bundle, so two trust domains reusing the same `kid` is not a collision.
 
 ## Related
 

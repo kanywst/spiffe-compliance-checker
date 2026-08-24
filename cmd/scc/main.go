@@ -11,6 +11,7 @@ import (
 	"os"
 
 	"github.com/kanywst/spiffe-compliance-checker/internal/bundle"
+	"github.com/kanywst/spiffe-compliance-checker/internal/bundlemap"
 	"github.com/kanywst/spiffe-compliance-checker/internal/id"
 	"github.com/kanywst/spiffe-compliance-checker/internal/jwtsvid"
 	"github.com/kanywst/spiffe-compliance-checker/internal/report"
@@ -29,11 +30,12 @@ var (
 const usage = `scc — SPIFFE Compliance Checker
 
 Usage:
-  scc id        [--format text|json|sarif] <spiffe-id-string>
-  scc x509-svid [--format text|json|sarif] <cert.pem | cert.der>
-  scc jwt-svid  [--format text|json|sarif] <token>
-  scc wit-svid  [--format text|json|sarif] <token>
-  scc bundle    [--format text|json|sarif] <bundle.json>
+  scc id         [--format text|json|sarif] <spiffe-id-string>
+  scc x509-svid  [--format text|json|sarif] <cert.pem | cert.der>
+  scc jwt-svid   [--format text|json|sarif] <token>
+  scc wit-svid   [--format text|json|sarif] <token>
+  scc bundle     [--format text|json|sarif] <bundle.json>
+  scc bundle-map [--format text|json|sarif] <bundle-map.json>
 
 Each subcommand prints one line per checked clause. Exit code is 1 if any
 MUST clause fails, 0 otherwise. SHOULD violations are reported as WARN and
@@ -75,6 +77,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runWIT(rest, stdout, stderr)
 	case "bundle":
 		return runBundle(rest, stdout, stderr)
+	case "bundle-map":
+		return runBundleMap(rest, stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "scc: unknown subcommand %q\n\n%s", cmd, usage)
 		return 2
@@ -185,6 +189,25 @@ func runBundle(args []string, stdout, stderr io.Writer) int {
 	rep := &report.Report{Subject: "scc bundle  " + fs.Arg(0), Artifact: fs.Arg(0)}
 	if err := bundle.CheckFile(rep, fs.Arg(0)); err != nil {
 		fmt.Fprintf(stderr, "scc bundle: %v\n", err)
+		return 2
+	}
+	return emit(rep, *format, stdout, stderr)
+}
+
+func runBundleMap(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("bundle-map", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	format := addFormatFlag(fs)
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() != 1 {
+		fmt.Fprintln(stderr, "scc bundle-map: expected exactly one bundle map path")
+		return 2
+	}
+	rep := &report.Report{Subject: "scc bundle-map  " + fs.Arg(0), Artifact: fs.Arg(0)}
+	if err := bundlemap.CheckFile(rep, fs.Arg(0)); err != nil {
+		fmt.Fprintf(stderr, "scc bundle-map: %v\n", err)
 		return 2
 	}
 	return emit(rep, *format, stdout, stderr)

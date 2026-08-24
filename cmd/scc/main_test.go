@@ -4,6 +4,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -108,10 +110,57 @@ func TestUsageListsEverySubcommand(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("--help exit = %d, want 0", code)
 	}
-	for _, sub := range []string{"id", "x509-svid", "jwt-svid", "wit-svid", "bundle"} {
+	for _, sub := range []string{"id", "x509-svid", "jwt-svid", "wit-svid", "bundle", "bundle-map"} {
 		if !strings.Contains(stdout, "scc "+sub) {
 			t.Errorf("usage does not mention subcommand %q\n%s", sub, stdout)
 		}
+	}
+}
+
+// writeTemp writes content to a temp file and returns its path.
+func writeTemp(t *testing.T, name, content string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), name)
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestRunBundleMapExitCodes(t *testing.T) {
+	compliant := writeTemp(t, "map.json", `{
+		"trust_domains": {
+			"example.com": {
+				"spiffe_sequence": 1,
+				"keys": [{"kty": "RSA", "kid": "k1", "use": "jwt-svid"}]
+			}
+		}
+	}`)
+	if code, out, _ := runCapture("bundle-map", compliant); code != 0 {
+		t.Errorf("compliant bundle-map exit = %d, want 0\n%s", code, out)
+	}
+
+	// An uppercase trust domain name violates SPIFFE-ID.md §2.1, which
+	// §5.1.1 adopts for map keys.
+	bad := writeTemp(t, "map.json", `{
+		"trust_domains": {"Example.com": {"spiffe_sequence": 1, "keys": []}}
+	}`)
+	if code, out, _ := runCapture("bundle-map", bad); code != 1 {
+		t.Errorf("non-compliant bundle-map exit = %d, want 1\n%s", code, out)
+	}
+}
+
+func TestRunBundleMapUsageErrors(t *testing.T) {
+	if code, _, stderr := runCapture("bundle-map"); code != 2 {
+		t.Errorf("no-arg exit = %d, want 2 (stderr: %q)", code, stderr)
+	}
+	if code, _, stderr := runCapture("bundle-map", "a", "b"); code != 2 {
+		t.Errorf("two-arg exit = %d, want 2 (stderr: %q)", code, stderr)
+	}
+	// A malformed map is a tool-level error (exit 2), not a compliance failure.
+	broken := writeTemp(t, "map.json", `{"trust_domains":`)
+	if code, _, stderr := runCapture("bundle-map", broken); code != 2 {
+		t.Errorf("malformed map exit = %d, want 2 (stderr: %q)", code, stderr)
 	}
 }
 

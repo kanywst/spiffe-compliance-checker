@@ -162,9 +162,10 @@ var (
 	BundleKeyUseSet = Clause{"SPIFFE_Trust_Domain_and_Bundle.md", "§4.2.2", SeverityMUST,
 		`each key MUST set "use"`}
 	// §4.2.2's list of values is descriptive ("At the time of this writing...")
-	// and predates WIT-SVID.md §6.1 adding "wit-svid". The same section tells
-	// consumers to ignore a JWK whose use they do not recognize, so an unknown
-	// value makes the entry inert rather than the bundle non-compliant.
+	// and now enumerates all three SVID types, "wit-svid" included. It stays a
+	// SHOULD because the same section tells consumers to ignore a JWK whose use
+	// they do not recognize, so an unknown value makes the entry inert rather
+	// than the bundle non-compliant.
 	BundleKeyUseKnown = Clause{"SPIFFE_Trust_Domain_and_Bundle.md", "§4.2.2", SeveritySHOULD,
 		`"use" SHOULD name a defined SVID type: "x509-svid", "jwt-svid", "wit-svid"`}
 	BundleSequenceMonotonic = Clause{"SPIFFE_Trust_Domain_and_Bundle.md", "§4.1.1", SeveritySHOULD,
@@ -183,4 +184,24 @@ var (
 		`wit-svid JWK entry MUST set "kid"`}
 	BundleKIDUnique = Clause{"WIT-SVID.md", "§6.1", SeverityMUST,
 		`"kid" MUST be unique across the bundle, jwt-svid and wit-svid entries alike`}
+)
+
+// SPIFFE Bundle Map clauses (SPIFFE_Trust_Domain_and_Bundle.md §5). A bundle
+// map is a collection of bundles keyed by trust domain name. §5.1.1 defers to
+// SPIFFE-ID.md §2 for what makes a name valid, so the SPIFFE-ID trust domain
+// clauses above are reused verbatim on the keys rather than restated here.
+var (
+	BundleMapTrustDomainsPresent = Clause{"SPIFFE_Trust_Domain_and_Bundle.md", "§5.1.1", SeverityMUST,
+		`"trust_domains" key MUST be set, and MAY be empty`}
+	BundleMapEntryIsBundle = Clause{"SPIFFE_Trust_Domain_and_Bundle.md", "§5.1.1", SeverityMUST,
+		`each "trust_domains" entry MUST be a SPIFFE Bundle`}
+	// §6.3 explains why this is a MUST on the consumer: duplicate trust domain
+	// names make bundle selection unpredictable, so the wrong trust anchors can
+	// end up validating an SVID.
+	BundleMapTrustDomainsUnique = Clause{"SPIFFE_Trust_Domain_and_Bundle.md", "§5.1.1", SeverityMUST,
+		"trust domain names MUST be unique; consumers MUST reject a map with duplicates"}
+	// The inverse of BundleRefreshHintInteger: a refresh hint applies to the
+	// map as a whole, not to the bundles inside it.
+	BundleMapNoRefreshHint = Clause{"SPIFFE_Trust_Domain_and_Bundle.md", "§5.1.1", SeveritySHOULD,
+		`bundles inside a map SHOULD omit "spiffe_refresh_hint"`}
 )

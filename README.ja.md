@@ -8,9 +8,9 @@
 
 ![demo](./assets/demo.gif)
 
-[SPIFFE](https://spiffe.io) の artifact を静的に検証する CLI。SPIFFE ID 文字列、X.509-SVID 証明書、JWT-SVID トークン、Trust Bundle のいずれかを `scc` に渡すと、[SPIFFE 仕様](https://github.com/spiffe/spiffe/tree/main/standards) の MUST / MUST NOT 句のうち何が満たされていて何が違反しているかを 1 行ずつ報告する。各行には仕様書名とセクション番号が付くので、落ちた assertion からそのまま仕様本文に飛んで根拠を確認できる。
+[SPIFFE](https://spiffe.io) の artifact を静的に検証する CLI。SPIFFE ID 文字列、X.509-SVID 証明書、JWT-SVID / WIT-SVID トークン、Trust Bundle、Bundle Map のいずれかを `scc` に渡すと、[SPIFFE 仕様](https://github.com/spiffe/spiffe/tree/main/standards) の MUST / MUST NOT 句のうち何が満たされていて何が違反しているかを 1 行ずつ報告する。各行には仕様書名とセクション番号が付くので、落ちた assertion からそのまま仕様本文に飛んで根拠を確認できる。
 
-SPIFFE は CNCF の仕様セットで、`spiffe://...` 形式の workload identity とそれを運ぶ SVID を定義している。SPIRE、Istio の mTLS、Cilium の mutual auth、社内製の実装などが SPIFFE 準拠を名乗っている。仕様は [spiffe/spiffe](https://github.com/spiffe/spiffe) の 8 本の markdown に分散しているが、公式の conformance suite は存在しない。`scc` はその空白のうち「外から artifact だけ見て検証できる範囲」をカバーする。Workload attestation、鍵ローテーション、Workload API endpoint の振る舞い、特定 bundle に対する署名検証などの動的な側面はスコープ外。
+SPIFFE は CNCF の仕様セットで、`spiffe://...` 形式の workload identity とそれを運ぶ SVID を定義している。SPIRE、Istio の mTLS、Cilium の mutual auth、社内製の実装などが SPIFFE 準拠を名乗っている。仕様は [spiffe/spiffe](https://github.com/spiffe/spiffe) の 11 本の markdown に分散しているが、公式の conformance suite は存在しない。`scc` はその空白のうち「外から artifact だけ見て検証できる範囲」をカバーする。Workload attestation、鍵ローテーション、Workload API endpoint の振る舞い、特定 bundle に対する署名検証などの動的な側面はスコープ外。
 
 ## インストール
 
@@ -32,11 +32,12 @@ CLI は色付き出力に [`charm.land/lipgloss/v2`](https://github.com/charmbra
 ## 使い方
 
 ```text
-scc id        [--format text|json|sarif] <spiffe-id-string>
-scc x509-svid [--format text|json|sarif] <cert.pem | cert.der>
-scc jwt-svid  [--format text|json|sarif] <token>
-scc wit-svid  [--format text|json|sarif] <token>
-scc bundle    [--format text|json|sarif] <bundle.json>
+scc id         [--format text|json|sarif] <spiffe-id-string>
+scc x509-svid  [--format text|json|sarif] <cert.pem | cert.der>
+scc jwt-svid   [--format text|json|sarif] <token>
+scc wit-svid   [--format text|json|sarif] <token>
+scc bundle     [--format text|json|sarif] <bundle.json>
+scc bundle-map [--format text|json|sarif] <bundle-map.json>
 ```
 
 各サブコマンドは assertion 1 件につき 1 行を出力する。MUST 句が 1 つでも落ちれば exit code は 1、それ以外は 0。SHOULD 違反は `WARN` として表示され exit code には影響しない。色は stdout が TTY かつ `NO_COLOR` が未設定のときだけ ON になるので、script や CI ログでも同じバイナリが安全に使える。
@@ -88,8 +89,9 @@ $ echo $?
 | `JWT-SVID.md`                         | `alg` whitelist、JWS Compact Serialization、`sub` / `aud` / `exp` の存在、`sub` の SPIFFE ID 妥当性 |
 | `WIT-SVID.md`                         | 必須の `kid` / `typ=wit+jwt` / `alg`、`cnf.jwk` の構造とアルゴリズム、禁止された `aud`、`nbf` / `iss` の規約 |
 | `SPIFFE_Trust_Domain_and_Bundle.md`   | JWKS shape、key ごとの `kty` / `use`、`spiffe_sequence` / `spiffe_refresh_hint`、x509 の `x5c`、bundle 全体での `kid` 一意性 |
+| `SPIFFE_Trust_Domain_and_Bundle.md` §5 | bundle map: `trust_domains` の存在、trust domain 名の妥当性と一意性、内包する各 bundle、`spiffe_refresh_hint` の省略 |
 
-MUST 句は `spiffe/spiffe` main ブランチの commit [`281c4b0`](https://github.com/spiffe/spiffe/commit/281c4b0) (2026-07-09) を出典としている。
+MUST 句は `spiffe/spiffe` main ブランチの commit [`dc4e9d9`](https://github.com/spiffe/spiffe/commit/dc4e9d9) (2026-08-03) を出典としている。
 
 ### WIT-SVID について
 
@@ -100,6 +102,17 @@ MUST 句は `spiffe/spiffe` main ブランチの commit [`281c4b0`](https://gith
 `WIT-SVID.md` は `spiffe/spiffe` 上で **Stability: Incubating** に分類されている。破壊的変更は避けられるが、実装からのフィードバック次第では入りうる、という段階。他の 3 本は Stable。つまり WIT-SVID 関連の句は今後動く可能性が他より高い。
 
 trust bundle 側では WIT の署名鍵が `use` を `wit-svid` にした JWK entry として公開される (`WIT-SVID.md` §6.1)。`scc bundle` は `x509-svid` / `jwt-svid` に加えてこの値を受理し、該当 entry に `kid` を要求し、鍵付き entry 間で `kid` が衝突していないかを検査する。
+
+### Bundle Map について
+
+[SPIFFE Bundle Map](https://github.com/spiffe/spiffe/blob/main/standards/SPIFFE_Trust_Domain_and_Bundle.md#5-spiffe-bundle-map) (`SPIFFE_Trust_Domain_and_Bundle.md` §5) は trust domain 名をキーに bundle を並べた `trust_domains` オブジェクト。`scc bundle-map` は内包する各 bundle に対して `scc bundle` と同じ検査を丸ごと走らせ、どの trust domain 由来の assertion かを各行に明示した上で、map 自身の句を上乗せする。
+
+- `trust_domains` は MUST で必須。ただし空でもよい。
+- 各キーは有効な trust domain 名でなければならない。§5.1.1 がその判断を `SPIFFE-ID.md` §2 に委ねているので、SPIFFE ID の authority を検査するのと同じ句をそのままキーに適用している。
+- trust domain 名は一意でなければならない。ここは素直に JSON を unmarshal しただけでは検出できない唯一の句で、Go を含む多くのパーサは重複キーの最後のものを黙って採用してしまう。そのため `scc` は生バイト列を token レベルで走査し直している。§6.3 が理由を書いている通り、名前が重複すると誤った trust anchor で SVID が検証されうる。
+- map の中の bundle は `spiffe_refresh_hint` を SHOULD で省略する。単体の bundle とは逆向きの要求で、refresh hint は map 全体に掛かるものだから。
+
+`kid` の一意性は bundle 単位のままなので、別々の trust domain が同じ `kid` を使っていても衝突扱いにはならない。
 
 ## 関連プロジェクト
 
