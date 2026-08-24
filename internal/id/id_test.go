@@ -133,3 +133,67 @@ func TestCheck(t *testing.T) {
 		})
 	}
 }
+
+// CheckTrustDomain is the entry point internal/bundlemap uses on a bare trust
+// domain name, so it must apply the §2.1/§2.3 clauses without a scheme or path
+// and attribute each detail to the caller's tag.
+func TestCheckTrustDomain(t *testing.T) {
+	cases := []struct {
+		name           string
+		tag            string
+		in             string
+		wantFailed     bool
+		wantContainAny []string
+	}{
+		{
+			name:       "valid name",
+			in:         "example.com",
+			wantFailed: false,
+		},
+		{
+			name:           "empty name",
+			in:             "",
+			wantFailed:     true,
+			wantContainAny: []string{"trust domain MUST NOT be empty"},
+		},
+		{
+			name:           "uppercase name is tagged",
+			tag:            `trust_domains["Example.com"]`,
+			in:             "Example.com",
+			wantFailed:     true,
+			wantContainAny: []string{`trust_domains["Example.com"]: trust_domain="Example.com"`},
+		},
+		{
+			name:           "name over 255 bytes",
+			in:             strings.Repeat("a", 256),
+			wantFailed:     true,
+			wantContainAny: []string{"len=256"},
+		},
+		{
+			name:           "forbidden character",
+			in:             "example.com/foo",
+			wantFailed:     true,
+			wantContainAny: []string{"only [a-z0-9.-_]"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &report.Report{}
+			id.CheckTrustDomain(r, tc.tag, tc.in)
+
+			var buf strings.Builder
+			r.Write(&buf)
+			out := buf.String()
+
+			if got := r.Failed(); got != tc.wantFailed {
+				t.Fatalf("Failed()=%v, want %v\nreport:\n%s", got, tc.wantFailed, out)
+			}
+			for _, sub := range tc.wantContainAny {
+				if !strings.Contains(out, sub) {
+					t.Errorf("expected report to mention %q\nreport:\n%s", sub, out)
+				}
+			}
+		})
+	}
+}

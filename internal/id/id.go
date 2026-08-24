@@ -71,29 +71,52 @@ func checkAuthority(r *report.Report, u *url.URL) {
 		r.Pass(spec.IDNoPort, "")
 	}
 
-	if host == "" {
-		r.Fail(spec.IDTrustDomainNonEmpty, "")
+	CheckTrustDomain(r, "", host)
+}
+
+// CheckTrustDomain evaluates the trust-domain clauses of SPIFFE-ID.md §2.1 and
+// §2.3 against a bare trust domain name — no scheme, no path. It is exported
+// because a SPIFFE Bundle Map keys its bundles by trust domain name and
+// SPIFFE_Trust_Domain_and_Bundle.md §5.1.1 defers to SPIFFE-ID.md §2 for what
+// makes such a name valid. tag, when non-empty, prefixes each detail so the
+// caller can say which entry the name came from.
+func CheckTrustDomain(r *report.Report, tag, name string) {
+	if name == "" {
+		r.Fail(spec.IDTrustDomainNonEmpty, annotate(tag, ""))
 		return
 	}
-	r.Pass(spec.IDTrustDomainNonEmpty, "")
+	r.Pass(spec.IDTrustDomainNonEmpty, annotate(tag, ""))
 
-	if host != strings.ToLower(host) {
-		r.Fail(spec.IDTrustDomainLowercase, fmt.Sprintf("trust_domain=%q", host))
+	if name != strings.ToLower(name) {
+		r.Fail(spec.IDTrustDomainLowercase, annotate(tag, fmt.Sprintf("trust_domain=%q", name)))
 	} else {
-		r.Pass(spec.IDTrustDomainLowercase, "")
+		r.Pass(spec.IDTrustDomainLowercase, annotate(tag, ""))
 	}
 
-	if !isTrustDomainCharset(host) {
-		r.Fail(spec.IDTrustDomainCharset, fmt.Sprintf("trust_domain=%q", host))
+	if !isTrustDomainCharset(name) {
+		r.Fail(spec.IDTrustDomainCharset, annotate(tag, fmt.Sprintf("trust_domain=%q", name)))
 	} else {
-		r.Pass(spec.IDTrustDomainCharset, "")
+		r.Pass(spec.IDTrustDomainCharset, annotate(tag, ""))
 	}
 
 	// §2.3: trust domain at most 255 bytes.
-	if len(host) > 255 {
-		r.Fail(spec.IDTrustDomainLengthLimit, fmt.Sprintf("len=%d", len(host)))
+	if len(name) > 255 {
+		r.Fail(spec.IDTrustDomainLengthLimit, annotate(tag, fmt.Sprintf("len=%d", len(name))))
 	} else {
-		r.Pass(spec.IDTrustDomainLengthLimit, "")
+		r.Pass(spec.IDTrustDomainLengthLimit, annotate(tag, ""))
+	}
+}
+
+// annotate prefixes a detail with the caller's tag, collapsing to whichever
+// half is non-empty so an untagged call renders exactly as it did before.
+func annotate(tag, msg string) string {
+	switch {
+	case tag == "":
+		return msg
+	case msg == "":
+		return tag
+	default:
+		return tag + ": " + msg
 	}
 }
 

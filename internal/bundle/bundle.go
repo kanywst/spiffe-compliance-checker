@@ -26,54 +26,114 @@ func CheckFile(r *report.Report, path string) error {
 	return Check(r, raw)
 }
 
-// Check evaluates the bundle in raw against the SPIFFE spec. JSON numbers
+// Check evaluates the bundle in raw against the SPIFFE spec.
+func Check(r *report.Report, raw []byte) error {
+	b, err := DecodeJSON(raw)
+	if err != nil {
+		return fmt.Errorf("bundle is not valid JSON: %w", err)
+	}
+	CheckObject(r, "", b)
+	return nil
+}
+
+// DecodeJSON decodes a SPIFFE bundle document into a generic object. Numbers
 // are decoded with UseNumber() so spiffe_sequence preserves its full integer
 // width — the spec requires at least 64 bits of precision, but the default
-// float64 path silently loses it past 2^53.
-func Check(r *report.Report, raw []byte) error {
+// float64 path silently loses it past 2^53. Exported because a SPIFFE Bundle
+// Map embeds bundles verbatim and needs the same guarantee.
+func DecodeJSON(raw []byte) (map[string]any, error) {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.UseNumber()
 	var b map[string]any
 	if err := dec.Decode(&b); err != nil {
-		return fmt.Errorf("bundle is not valid JSON: %w", err)
+		return nil, err
 	}
+	return b, nil
+}
 
+// CheckObject evaluates an already-decoded standalone bundle. tag, when
+// non-empty, prefixes every detail so a caller checking several bundles can say
+// which one an assertion came from.
+func CheckObject(r *report.Report, tag string, b map[string]any) {
+	check(r, tag, b, false)
+}
+
+// CheckMapMember evaluates a bundle embedded in a SPIFFE Bundle Map. §5.1.1
+// inverts the refresh-hint expectation — the hint applies to the map as a
+// whole, so a bundle inside one SHOULD omit it — and every other clause is
+// unchanged.
+func CheckMapMember(r *report.Report, tag string, b map[string]any) {
+	check(r, tag, b, true)
+}
+
+func check(r *report.Report, tag string, b map[string]any, inMap bool) {
 	keysAny, ok := b["keys"]
 	if !ok {
-		r.Fail(spec.BundleKeysPresent, `"keys" key absent`)
-		return nil
+		r.Fail(spec.BundleKeysPresent, annotate(tag, `"keys" key absent`))
+		return
 	}
-	r.Pass(spec.BundleKeysPresent, "")
+	r.Pass(spec.BundleKeysPresent, annotate(tag, ""))
 
 	keys, ok := keysAny.([]any)
 	if !ok {
-		r.Fail(spec.BundleKeysPresent, fmt.Sprintf(`"keys" is %T, want array`, keysAny))
-		return nil
+		r.Fail(spec.BundleKeysPresent,
+			annotate(tag, fmt.Sprintf(`"keys" is %T, want array`, keysAny)))
+		return
 	}
 
-	checkSequence(r, b)
-	checkRefreshHint(r, b)
+	checkSequence(r, tag, b)
+	if inMap {
+		checkRefreshHintOmitted(r, tag, b)
+	} else {
+		checkRefreshHint(r, tag, b)
+	}
 
 	// Token-signing entries (jwt-svid, wit-svid) carry a kid that must be
 	// unique bundle-wide, so collect them as we go and assert once at the end.
 	kids := make([]string, 0, len(keys))
 	for i, k := range keys {
+		keyTag := qualify(tag, fmt.Sprintf("keys[%d]", i))
 		jwk, ok := k.(map[string]any)
 		if !ok {
-			r.Fail(spec.BundleKeyKTYSet, fmt.Sprintf("keys[%d] is not an object", i))
+			r.Fail(spec.BundleKeyKTYSet, keyTag+" is not an object")
 			continue
 		}
-		if kid := checkJWK(r, i, jwk); kid != "" {
+		if kid := checkJWK(r, keyTag, jwk); kid != "" {
 			kids = append(kids, kid)
 		}
 	}
-	checkKIDUniqueness(r, kids)
-	return nil
+	checkKIDUniqueness(r, tag, kids)
+}
+
+// qualify prefixes a field path with the bundle's tag, so "keys[0]" reads as
+// `trust_domains["example.com"].keys[0]` inside a SPIFFE Bundle Map and stays
+// "keys[0]" for a standalone bundle.
+func qualify(tag, field string) string {
+	if tag == "" {
+		return field
+	}
+	return tag + "." + field
+}
+
+// annotate prefixes a free-text observation with the bundle's tag, collapsing
+// to whichever half is non-empty so an untagged bundle renders exactly as it
+// did before bundle maps existed.
+func annotate(tag, msg string) string {
+	switch {
+	case tag == "":
+		return msg
+	case msg == "":
+		return tag
+	default:
+		return tag + ": " + msg
+	}
 }
 
 // checkKIDUniqueness enforces WIT-SVID.md §6.1. x509-svid entries carry no kid
 // at all (X509-SVID.md §6.1), so they cannot collide and are not counted here.
-func checkKIDUniqueness(r *report.Report, kids []string) {
+// Uniqueness is scoped to one bundle: inside a map, each trust domain's bundle
+// gets its own assertion.
+func checkKIDUniqueness(r *report.Report, tag string, kids []string) {
 	if len(kids) == 0 {
 		return
 	}
@@ -91,64 +151,77 @@ func checkKIDUniqueness(r *report.Report, kids []string) {
 			noun = "entry"
 		}
 		r.Pass(spec.BundleKIDUnique,
-			fmt.Sprintf("%d keyed %s, all kids distinct", len(kids), noun))
+			annotate(tag, fmt.Sprintf("%d keyed %s, all kids distinct", len(kids), noun)))
 		return
 	}
 	sort.Strings(dupes)
-	r.Fail(spec.BundleKIDUnique, "duplicate kid(s): "+strings.Join(dupes, ", "))
+	r.Fail(spec.BundleKIDUnique,
+		annotate(tag, "duplicate kid(s): "+strings.Join(dupes, ", ")))
 }
 
-func checkSequence(r *report.Report, b map[string]any) {
+func checkSequence(r *report.Report, tag string, b map[string]any) {
 	v, ok := b["spiffe_sequence"]
 	if !ok {
-		r.Fail(spec.BundleSequenceMonotonic, "spiffe_sequence absent")
+		r.Fail(spec.BundleSequenceMonotonic, annotate(tag, "spiffe_sequence absent"))
 		return
 	}
 	n, ok := v.(json.Number)
 	if !ok {
 		r.Fail(spec.BundleSequenceMonotonic,
-			fmt.Sprintf("spiffe_sequence is %T, want integer", v))
+			annotate(tag, fmt.Sprintf("spiffe_sequence is %T, want integer", v)))
 		return
 	}
 	if !isIntegerNumber(n) {
 		r.Fail(spec.BundleSequenceMonotonic,
-			fmt.Sprintf("spiffe_sequence=%s is not integer", n))
+			annotate(tag, fmt.Sprintf("spiffe_sequence=%s is not integer", n)))
 		return
 	}
 	if isNegativeNumber(n) {
 		// A monotonically-increasing version counter is not meaningfully
 		// negative.
 		r.Fail(spec.BundleSequenceMonotonic,
-			fmt.Sprintf("spiffe_sequence=%s must be non-negative", n))
+			annotate(tag, fmt.Sprintf("spiffe_sequence=%s must be non-negative", n)))
 		return
 	}
-	r.Pass(spec.BundleSequenceMonotonic, fmt.Sprintf("spiffe_sequence=%s", n))
+	r.Pass(spec.BundleSequenceMonotonic, annotate(tag, fmt.Sprintf("spiffe_sequence=%s", n)))
 }
 
-func checkRefreshHint(r *report.Report, b map[string]any) {
+func checkRefreshHint(r *report.Report, tag string, b map[string]any) {
 	v, ok := b["spiffe_refresh_hint"]
 	if !ok {
-		r.Fail(spec.BundleRefreshHintInteger, "spiffe_refresh_hint absent")
+		r.Fail(spec.BundleRefreshHintInteger, annotate(tag, "spiffe_refresh_hint absent"))
 		return
 	}
 	n, ok := v.(json.Number)
 	if !ok {
 		r.Fail(spec.BundleRefreshHintInteger,
-			fmt.Sprintf("spiffe_refresh_hint is %T, want integer", v))
+			annotate(tag, fmt.Sprintf("spiffe_refresh_hint is %T, want integer", v)))
 		return
 	}
 	if !isIntegerNumber(n) {
 		r.Fail(spec.BundleRefreshHintInteger,
-			fmt.Sprintf("spiffe_refresh_hint=%s is not integer", n))
+			annotate(tag, fmt.Sprintf("spiffe_refresh_hint=%s is not integer", n)))
 		return
 	}
 	if isNegativeNumber(n) {
 		// A negative refresh interval has no physical meaning.
 		r.Fail(spec.BundleRefreshHintInteger,
-			fmt.Sprintf("spiffe_refresh_hint=%s must be non-negative", n))
+			annotate(tag, fmt.Sprintf("spiffe_refresh_hint=%s must be non-negative", n)))
 		return
 	}
-	r.Pass(spec.BundleRefreshHintInteger, fmt.Sprintf("spiffe_refresh_hint=%ss", n))
+	r.Pass(spec.BundleRefreshHintInteger, annotate(tag, fmt.Sprintf("spiffe_refresh_hint=%ss", n)))
+}
+
+// checkRefreshHintOmitted replaces checkRefreshHint for bundles inside a SPIFFE
+// Bundle Map. §5.1.1 tells producers to leave the hint out there and consumers
+// to ignore it if present, so the value is not worth type-checking — only its
+// absence is asserted.
+func checkRefreshHintOmitted(r *report.Report, tag string, b map[string]any) {
+	if _, ok := b["spiffe_refresh_hint"]; ok {
+		r.Fail(spec.BundleMapNoRefreshHint, annotate(tag, "spiffe_refresh_hint present"))
+		return
+	}
+	r.Pass(spec.BundleMapNoRefreshHint, annotate(tag, ""))
 }
 
 // isIntegerNumber reports whether n is a plain JSON integer (no fractional
@@ -170,10 +243,9 @@ func isNegativeNumber(n json.Number) bool {
 var whitespaceStripper = strings.NewReplacer("\n", "", "\r", "", "\t", "", " ", "")
 
 // checkJWK evaluates one JWK entry and returns its kid, or "" when the entry
-// has no valid kid to contribute to the bundle-wide uniqueness check.
-func checkJWK(r *report.Report, idx int, jwk map[string]any) string {
-	keyTag := fmt.Sprintf("keys[%d]", idx)
-
+// has no valid kid to contribute to the bundle-wide uniqueness check. keyTag
+// is the entry's already-qualified path, e.g. "keys[0]".
+func checkJWK(r *report.Report, keyTag string, jwk map[string]any) string {
 	switch v, ok := jwk["kty"]; {
 	case !ok:
 		r.Fail(spec.BundleKeyKTYSet, keyTag+": kty absent")
