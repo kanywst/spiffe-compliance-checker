@@ -87,6 +87,12 @@ release:
 # GoReleaser flags the `brews:` block as deprecated in favor of
 # `homebrew_casks:`, but the block still works and matches what `approval-hub`
 # already does in the same tap.
+#
+# The deprecation is bounded, not urgent: GoReleaser removes deprecated options
+# "only on major versions", and the release workflow pins `~> v2`, so this block
+# cannot disappear under us. Revisit it when — and only when — that pin moves to
+# v3. Migrating to `homebrew_casks:` before then would break the tap's own
+# Formula/Cask split for no gain.
 brews:
   - name: spiffe-compliance-checker
     repository:
