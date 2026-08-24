@@ -29,6 +29,22 @@ go install github.com/kanywst/spiffe-compliance-checker/cmd/scc@latest
 
 The CLI depends on [`charm.land/lipgloss/v2`](https://github.com/charmbracelet/lipgloss) for colored terminal output and `golang.org/x/term` for TTY detection. No other runtime dependencies.
 
+### Verifying a release
+
+Every release ships an SPDX 2.3 SBOM per archive (`<archive>.tar.gz.sbom.json`) and a keyless [cosign](https://github.com/sigstore/cosign) signature over `checksums.txt`. Keyless means there is no public key to fetch: the signing identity is the release workflow itself, recorded in the Sigstore transparency log.
+
+```bash
+# 1. Verify that checksums.txt was signed by this repo's release workflow
+cosign verify-blob checksums.txt \
+  --certificate checksums.txt.pem \
+  --signature checksums.txt.sig \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-identity-regexp '^https://github\.com/kanywst/spiffe-compliance-checker/\.github/workflows/release\.yml@refs/tags/v'
+
+# 2. Then check the archive against the now-trusted checksum list
+sha256sum --check --ignore-missing checksums.txt
+```
+
 ## Usage
 
 ```text

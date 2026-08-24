@@ -29,6 +29,22 @@ go install github.com/kanywst/spiffe-compliance-checker/cmd/scc@latest
 
 CLI は色付き出力に [`charm.land/lipgloss/v2`](https://github.com/charmbracelet/lipgloss)、TTY 検出に `golang.org/x/term` を使う。他のランタイム依存なし。
 
+### リリースの検証
+
+各リリースには archive ごとの SPDX 2.3 SBOM (`<archive>.tar.gz.sbom.json`) と、`checksums.txt` に対する keyless [cosign](https://github.com/sigstore/cosign) 署名が付く。keyless なので取得すべき公開鍵は存在しない。署名者の identity は release workflow そのもので、Sigstore の透明性ログに記録されている。
+
+```bash
+# 1. checksums.txt がこのリポジトリの release workflow で署名されたことを検証する
+cosign verify-blob checksums.txt \
+  --certificate checksums.txt.pem \
+  --signature checksums.txt.sig \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-identity-regexp '^https://github\.com/kanywst/spiffe-compliance-checker/\.github/workflows/release\.yml@refs/tags/v'
+
+# 2. 信頼できるようになった checksum リストと archive を突き合わせる
+sha256sum --check --ignore-missing checksums.txt
+```
+
 ## 使い方
 
 ```text
