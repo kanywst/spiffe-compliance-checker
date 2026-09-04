@@ -101,7 +101,11 @@ brews:
       branch: main
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     homepage: https://github.com/kanywst/spiffe-compliance-checker
-    description: Static MUST-clause compliance checker for SPIFFE artifacts (SPIFFE-ID, X.509-SVID, JWT-SVID, WIT-SVID, trust bundle, bundle map).
+    # Homebrew caps a formula desc at 80 characters and rejects a trailing full
+    # stop; `brew style` fails the generated formula on both. The artifact list
+    # that used to live here is in the readme, which is where someone deciding
+    # whether to install this actually reads it.
+    description: Static MUST-clause compliance checker for SPIFFE artifacts
     license: Apache-2.0
     commit_author:
       name: goreleaserbot
