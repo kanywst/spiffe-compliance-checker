@@ -110,7 +110,7 @@ func TestUsageListsEverySubcommand(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("--help exit = %d, want 0", code)
 	}
-	for _, sub := range []string{"id", "x509-svid", "jwt-svid", "wit-svid", "bundle", "bundle-map"} {
+	for _, sub := range []string{"id", "x509-svid", "jwt-svid", "wit-svid", "bundle", "bundle-map", "federation"} {
 		if !strings.Contains(stdout, "scc "+sub) {
 			t.Errorf("usage does not mention subcommand %q\n%s", sub, stdout)
 		}
@@ -161,6 +161,82 @@ func TestRunBundleMapUsageErrors(t *testing.T) {
 	broken := writeTemp(t, "map.json", `{"trust_domains":`)
 	if code, _, stderr := runCapture("bundle-map", broken); code != 2 {
 		t.Errorf("malformed map exit = %d, want 2 (stderr: %q)", code, stderr)
+	}
+}
+
+func TestRunFederationExitCodes(t *testing.T) {
+	if code, out, _ := runCapture("federation",
+		"--url=https://example.com/bundle.json",
+		"--profile=https_web",
+		"--trust-domain=example.com"); code != 0 {
+		t.Errorf("compliant federation exit = %d, want 0\n%s", code, out)
+	}
+
+	// §5.2.1.1: a plain http endpoint URL is a MUST violation.
+	if code, out, _ := runCapture("federation",
+		"--url=http://example.com/bundle.json",
+		"--profile=https_web",
+		"--trust-domain=example.com"); code != 1 {
+		t.Errorf("http endpoint exit = %d, want 1\n%s", code, out)
+	}
+
+	// Missing parameters are §5.1 failures, reported rather than rejected, so
+	// they exit 1 like any other compliance failure — not 2.
+	code, out, _ := runCapture("federation")
+	if code != 1 {
+		t.Errorf("empty configuration exit = %d, want 1\n%s", code, out)
+	}
+	if !strings.Contains(out, "endpoint URL not set") {
+		t.Errorf("empty configuration did not report the missing URL\n%s", out)
+	}
+}
+
+func TestRunFederationUsageErrors(t *testing.T) {
+	// The artifact is the flag set, so a positional argument is a usage error.
+	if code, _, stderr := runCapture("federation", "https://example.com/bundle.json"); code != 2 {
+		t.Errorf("positional-arg exit = %d, want 2 (stderr: %q)", code, stderr)
+	}
+	// An unreadable bootstrap bundle is a tool-level error, not a compliance
+	// failure.
+	code, _, stderr := runCapture("federation",
+		"--url=https://example.com/bundle.json",
+		"--profile=https_spiffe",
+		"--trust-domain=example.com",
+		"--endpoint-spiffe-id=spiffe://example.com/server",
+		"--endpoint-bundle="+filepath.Join(t.TempDir(), "missing.json"))
+	if code != 2 {
+		t.Errorf("missing bundle exit = %d, want 2 (stderr: %q)", code, stderr)
+	}
+}
+
+// TestRunFederationSARIFHasNoLocation pins the consequence of a federation
+// report carrying no Artifact: the configuration is not a file, so its SARIF
+// results must not claim a physical location.
+func TestRunFederationSARIFHasNoLocation(t *testing.T) {
+	code, stdout, _ := runCapture("federation", "--format=sarif",
+		"--url=http://example.com/bundle.json",
+		"--profile=https_web",
+		"--trust-domain=example.com")
+	if code != 1 {
+		t.Fatalf("exit = %d, want 1", code)
+	}
+	var got struct {
+		Runs []struct {
+			Results []struct {
+				Locations []json.RawMessage `json:"locations"`
+			} `json:"results"`
+		} `json:"runs"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("stdout is not JSON: %v\n%s", err, stdout)
+	}
+	if len(got.Runs) == 0 || len(got.Runs[0].Results) == 0 {
+		t.Fatalf("expected SARIF results\n%s", stdout)
+	}
+	for i, res := range got.Runs[0].Results {
+		if len(res.Locations) != 0 {
+			t.Errorf("result %d carries a location, want none\n%s", i, stdout)
+		}
 	}
 }
 
