@@ -205,3 +205,51 @@ var (
 	BundleMapNoRefreshHint = Clause{"SPIFFE_Trust_Domain_and_Bundle.md", "§5.1.1", SeveritySHOULD,
 		`bundles inside a map SHOULD omit "spiffe_refresh_hint"`}
 )
+
+// SPIFFE Federation clauses (SPIFFE_Federation.md §5). Most of this spec is
+// runtime — TLS handshakes, HTTP GETs, redirect following — and stays out of
+// scope. What is checkable statically is the bundle endpoint configuration
+// itself: §5.1 enumerates the three parameters every profile requires and
+// §5.2.x constrains the URL and the per-profile additions. What makes the
+// trust domain name and the endpoint SPIFFE ID valid is deferred to
+// SPIFFE-ID.md, so those clauses are reused rather than restated here.
+var (
+	FedURLPresent = Clause{"SPIFFE_Federation.md", "§5.1", SeverityMUST,
+		"bundle endpoint configuration MUST set the endpoint URL"}
+	FedProfilePresent = Clause{"SPIFFE_Federation.md", "§5.1", SeverityMUST,
+		"bundle endpoint configuration MUST set the endpoint profile type"}
+	FedTrustDomainPresent = Clause{"SPIFFE_Federation.md", "§5.1", SeverityMUST,
+		"bundle endpoint configuration MUST set the trust domain name to associate with the endpoint"}
+	// A MUST rather than the SHOULD that BundleKeyUseKnown gets for its
+	// analogous enumeration: §4.2.2 tells a consumer to ignore a JWK whose
+	// "use" it does not recognize, which makes an unknown value inert, while
+	// §5.2 gives an unknown profile no such escape hatch — it names the
+	// transport and authentication method, so a client that does not know it
+	// cannot reach the endpoint at all.
+	FedProfileKnown = Clause{"SPIFFE_Federation.md", "§5.2", SeverityMUST,
+		`endpoint profile MUST be one of the two profiles this spec defines: "https_web", "https_spiffe"`}
+	// §5.2.1.1 and §5.2.2.1 state these two identically, once per profile.
+	FedURLSchemeHTTPS = Clause{"SPIFFE_Federation.md", "§5.2.1.1 / §5.2.2.1", SeverityMUST,
+		"bundle endpoint URL MUST have the scheme set to https"}
+	FedURLNoUserinfo = Clause{"SPIFFE_Federation.md", "§5.2.1.1 / §5.2.2.1", SeverityMUST,
+		"bundle endpoint URL MUST NOT include userinfo in the authority component"}
+	// §5.2.1.2's MUST NOT binds the profile ("MUST NOT require any additional
+	// parameters"), not the operator writing a configuration, so carrying an
+	// extra parameter is not itself a violation. It is still worth reporting:
+	// an https_web entry with an endpoint SPIFFE ID is almost always an
+	// https_spiffe endpoint whose profile was set wrong, and the misconfigured
+	// client will authenticate the endpoint with Web PKI instead.
+	FedWebNoExtraParams = Clause{"SPIFFE_Federation.md", "§5.2.1.2", SeveritySHOULD,
+		"https_web configuration SHOULD carry no parameters beyond trust domain name, profile type and URL"}
+	FedSpiffeEndpointID = Clause{"SPIFFE_Federation.md", "§5.2.2.2", SeverityMUST,
+		"https_spiffe configuration MUST set the SPIFFE ID of the bundle endpoint server"}
+	// §5.2.2.2 phrases the bootstrap requirement as a need rather than a MUST
+	// ("clients need to be configured with a single up-to-date bundle"), and
+	// only the client's support for the SPIFFE Bundle Format is a MUST, so
+	// this is recorded as a recommendation. It applies to self-serving
+	// endpoints alone: when the endpoint's SPIFFE ID lives in a different
+	// trust domain, §5.2.2.2 says the client is configured for that trust
+	// domain separately, which a single configuration cannot show.
+	FedSpiffeSelfServingBundle = Clause{"SPIFFE_Federation.md", "§5.2.2.2", SeveritySHOULD,
+		"a self-serving https_spiffe endpoint SHOULD be configured with a bootstrap bundle for the first retrieval"}
+)

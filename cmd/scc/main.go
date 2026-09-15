@@ -12,6 +12,7 @@ import (
 
 	"github.com/kanywst/spiffe-compliance-checker/internal/bundle"
 	"github.com/kanywst/spiffe-compliance-checker/internal/bundlemap"
+	"github.com/kanywst/spiffe-compliance-checker/internal/federation"
 	"github.com/kanywst/spiffe-compliance-checker/internal/id"
 	"github.com/kanywst/spiffe-compliance-checker/internal/jwtsvid"
 	"github.com/kanywst/spiffe-compliance-checker/internal/report"
@@ -36,10 +37,18 @@ Usage:
   scc wit-svid   [--format text|json|sarif] <token>
   scc bundle     [--format text|json|sarif] <bundle.json>
   scc bundle-map [--format text|json|sarif] <bundle-map.json>
+  scc federation [--format text|json|sarif] --url <url> --profile <profile>
+                 --trust-domain <name> [--endpoint-spiffe-id <id>]
+                 [--endpoint-bundle <bundle.json>]
 
 Each subcommand prints one line per checked clause. Exit code is 1 if any
 MUST clause fails, 0 otherwise. SHOULD violations are reported as WARN and
 do not affect the exit code.
+
+scc federation takes a SPIFFE bundle endpoint configuration rather than a
+file: SPIFFE_Federation.md §5.1 defines the parameters a client must hold,
+not a format they are written in. --endpoint-spiffe-id and --endpoint-bundle
+are the additions the https_spiffe profile defines.
 
 WIT-SVID.md is marked Incubating in spiffe/spiffe, so its clauses may still
 change; the other specs scc checks are Stable.
@@ -79,6 +88,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runBundle(rest, stdout, stderr)
 	case "bundle-map":
 		return runBundleMap(rest, stdout, stderr)
+	case "federation":
+		return runFederation(rest, stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "scc: unknown subcommand %q\n\n%s", cmd, usage)
 		return 2
@@ -208,6 +219,48 @@ func runBundleMap(args []string, stdout, stderr io.Writer) int {
 	rep := &report.Report{Subject: "scc bundle-map  " + fs.Arg(0), Artifact: fs.Arg(0)}
 	if err := bundlemap.CheckFile(rep, fs.Arg(0)); err != nil {
 		fmt.Fprintf(stderr, "scc bundle-map: %v\n", err)
+		return 2
+	}
+	return emit(rep, *format, stdout, stderr)
+}
+
+// runFederation is the one subcommand whose artifact is not a single string or
+// file but a set of parameters, so it reads flags where the others read a
+// positional argument. Missing parameters are checked, not rejected: their
+// absence is itself a SPIFFE_Federation.md §5.1 violation and belongs in the
+// report rather than in a usage error. The report carries no Artifact, so its
+// SARIF results omit locations the same way scc id's do.
+func runFederation(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("federation", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	format := addFormatFlag(fs)
+	endpointURL := fs.String("url", "", "bundle endpoint URL")
+	profile := fs.String("profile", "", "endpoint profile: https_web or https_spiffe")
+	trustDomain := fs.String("trust-domain", "", "trust domain name to associate with the endpoint")
+	endpointID := fs.String("endpoint-spiffe-id", "", "SPIFFE ID of the endpoint server (https_spiffe)")
+	endpointBundle := fs.String("endpoint-bundle", "", "path to the bootstrap bundle (https_spiffe)")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(stderr, "scc federation: expected flags only, got a positional argument")
+		return 2
+	}
+
+	subject := "scc federation  " + *endpointURL
+	if *endpointURL == "" {
+		subject = "scc federation"
+	}
+	rep := &report.Report{Subject: subject}
+	err := federation.Check(rep, federation.Config{
+		URL:         *endpointURL,
+		Profile:     *profile,
+		TrustDomain: *trustDomain,
+		EndpointID:  *endpointID,
+		BundlePath:  *endpointBundle,
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "scc federation: %v\n", err)
 		return 2
 	}
 	return emit(rep, *format, stdout, stderr)

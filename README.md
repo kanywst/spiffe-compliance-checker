@@ -8,7 +8,7 @@
 
 ![demo](./assets/demo.gif)
 
-A static compliance checker for [SPIFFE](https://spiffe.io) artifacts. Pass `scc` a SPIFFE ID, an X.509-SVID certificate, a JWT-SVID or WIT-SVID token, a trust bundle, or a bundle map, and it tells you which MUST / MUST NOT clauses from the [SPIFFE spec](https://github.com/spiffe/spiffe/tree/main/standards) the artifact satisfies or violates. Every output line cites the source document and section so a failed check reads as a spec walkthrough.
+A static compliance checker for [SPIFFE](https://spiffe.io) artifacts. Pass `scc` a SPIFFE ID, an X.509-SVID certificate, a JWT-SVID or WIT-SVID token, a trust bundle, a bundle map, or a bundle endpoint configuration, and it tells you which MUST / MUST NOT clauses from the [SPIFFE spec](https://github.com/spiffe/spiffe/tree/main/standards) the artifact satisfies or violates. Every output line cites the source document and section so a failed check reads as a spec walkthrough.
 
 SPIFFE is the CNCF spec set that defines `spiffe://...` workload identities and the SVIDs that carry them. It backs SPIRE, Istio's mTLS layer, Cilium's mutual auth, and many in-house implementations. The spec lives across eleven markdown files in [spiffe/spiffe](https://github.com/spiffe/spiffe) and ships without an official conformance suite. `scc` covers the slice of compliance that is checkable from outside: the shape of the artifacts themselves. Runtime concerns (workload attestation, key rotation, Workload API endpoint behaviour, signature verification against a specific bundle) are out of scope.
 
@@ -53,6 +53,8 @@ scc jwt-svid   [--format text|json|sarif] <token>
 scc wit-svid   [--format text|json|sarif] <token>
 scc bundle     [--format text|json|sarif] <bundle.json>
 scc bundle-map [--format text|json|sarif] <bundle-map.json>
+scc federation [--format text|json|sarif] --url <url> --profile <profile> --trust-domain <name>
+               [--endpoint-spiffe-id <id>] [--endpoint-bundle <bundle.json>]
 ```
 
 Each subcommand prints one line per checked clause and exits non-zero if any MUST clause fails. SHOULD violations surface as `WARN` and do not change the exit code. Colors render only when stdout is a TTY and `NO_COLOR` is unset, so the same binary is safe in scripts and CI logs.
@@ -105,6 +107,7 @@ $ echo $?
 | `WIT-SVID.md`                         | mandatory `kid` / `typ=wit+jwt` / `alg`, `cnf.jwk` shape and algorithm, forbidden `aud`, `nbf` / `iss` rules |
 | `SPIFFE_Trust_Domain_and_Bundle.md`   | JWKS shape, `kty` / `use` per key, `spiffe_sequence` / `spiffe_refresh_hint`, `x5c` for x509, bundle-wide `kid` uniqueness |
 | `SPIFFE_Trust_Domain_and_Bundle.md` §5 | bundle map: `trust_domains` presence, trust domain name validity and uniqueness, each embedded bundle, omitted `spiffe_refresh_hint` |
+| `SPIFFE_Federation.md` §5             | bundle endpoint configuration: the three required parameters, profile type, endpoint URL scheme and userinfo, per-profile parameters, bootstrap bundle |
 
 The MUST clauses are pulled directly from the `spiffe/spiffe` main branch at commit [`dc4e9d9`](https://github.com/spiffe/spiffe/commit/dc4e9d9) (2026-08-03).
 
@@ -128,6 +131,31 @@ A [SPIFFE Bundle Map](https://github.com/spiffe/spiffe/blob/main/standards/SPIFF
 - Bundles inside a map SHOULD omit `spiffe_refresh_hint`, the inverse of the standalone rule, because the hint applies to the map as a whole.
 
 `kid` uniqueness stays scoped to a single bundle, so two trust domains reusing the same `kid` is not a collision.
+
+### Federation
+
+[SPIFFE Federation](https://github.com/spiffe/spiffe/blob/main/standards/SPIFFE_Federation.md) is how one trust domain learns another's trust bundle: the foreign trust domain publishes its bundle at a *bundle endpoint*, and a client fetches it. Almost all of that spec is runtime — TLS handshakes, certificate validation, HTTP GETs, redirect handling — and stays out of scope here. What `scc federation` checks is the part that exists before any connection happens: the **bundle endpoint configuration**, the parameters §5.1 says a client MUST hold before it can retrieve anything.
+
+The spec defines those parameters but no serialization for them, so `scc federation` takes flags rather than a file. Inventing a config format would mean checking a shape the spec never specified:
+
+```bash
+# Figure 4's example: a non-self-serving https_spiffe endpoint
+scc federation \
+  --url 'https://example.com/production/bundle.json' \
+  --profile https_spiffe \
+  --trust-domain prod.example.com \
+  --endpoint-spiffe-id 'spiffe://example.com/spiffe-bundle-server'
+```
+
+What it checks:
+
+- All three §5.1 parameters are set. A missing one is a compliance failure in the report, not a usage error — that is the requirement being violated.
+- The trust domain name is a valid trust domain name, via the same `SPIFFE-ID.md` §2 clauses a bundle map runs on its keys.
+- The profile is one of the two §5.2 defines. Unlike an unrecognized bundle `use`, which §4.2.2 tells consumers to ignore, an unknown profile names a transport and authentication method the client does not have — nothing can connect.
+- The endpoint URL uses the `https` scheme and carries no userinfo (§5.2.1.1 and §5.2.2.1 state this identically for both profiles).
+- `https_spiffe` sets the endpoint server's SPIFFE ID (§5.2.2.2), which then gets the full `scc id` sweep.
+- An `https_web` entry carrying `https_spiffe` parameters warns. §5.2.1.2's MUST NOT binds the profile rather than the operator, so this is not a failure — but an endpoint SPIFFE ID under `https_web` is nearly always a profile set to the wrong value, and the client will silently authenticate with Web PKI instead.
+- A **self-serving** endpoint — one whose SPIFFE ID lives in the trust domain whose bundle it serves — is expected to carry a bootstrap bundle for the first retrieval. When one is supplied, it is checked as a full trust bundle. When the endpoint is *not* self-serving, §5.2.2.2 says its trust domain is configured separately, which a single configuration cannot show, so `scc` stays silent rather than emitting a vacuous result.
 
 ## Related
 

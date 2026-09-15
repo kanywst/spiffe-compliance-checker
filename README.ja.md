@@ -8,7 +8,7 @@
 
 ![demo](./assets/demo.gif)
 
-[SPIFFE](https://spiffe.io) の artifact を静的に検証する CLI。SPIFFE ID 文字列、X.509-SVID 証明書、JWT-SVID / WIT-SVID トークン、Trust Bundle、Bundle Map のいずれかを `scc` に渡すと、[SPIFFE 仕様](https://github.com/spiffe/spiffe/tree/main/standards) の MUST / MUST NOT 句のうち何が満たされていて何が違反しているかを 1 行ずつ報告する。各行には仕様書名とセクション番号が付くので、落ちた assertion からそのまま仕様本文に飛んで根拠を確認できる。
+[SPIFFE](https://spiffe.io) の artifact を静的に検証する CLI。SPIFFE ID 文字列、X.509-SVID 証明書、JWT-SVID / WIT-SVID トークン、Trust Bundle、Bundle Map、Bundle Endpoint 設定のいずれかを `scc` に渡すと、[SPIFFE 仕様](https://github.com/spiffe/spiffe/tree/main/standards) の MUST / MUST NOT 句のうち何が満たされていて何が違反しているかを 1 行ずつ報告する。各行には仕様書名とセクション番号が付くので、落ちた assertion からそのまま仕様本文に飛んで根拠を確認できる。
 
 SPIFFE は CNCF の仕様セットで、`spiffe://...` 形式の workload identity とそれを運ぶ SVID を定義している。SPIRE、Istio の mTLS、Cilium の mutual auth、社内製の実装などが SPIFFE 準拠を名乗っている。仕様は [spiffe/spiffe](https://github.com/spiffe/spiffe) の 11 本の markdown に分散しているが、公式の conformance suite は存在しない。`scc` はその空白のうち「外から artifact だけ見て検証できる範囲」をカバーする。Workload attestation、鍵ローテーション、Workload API endpoint の振る舞い、特定 bundle に対する署名検証などの動的な側面はスコープ外。
 
@@ -53,6 +53,8 @@ scc jwt-svid   [--format text|json|sarif] <token>
 scc wit-svid   [--format text|json|sarif] <token>
 scc bundle     [--format text|json|sarif] <bundle.json>
 scc bundle-map [--format text|json|sarif] <bundle-map.json>
+scc federation [--format text|json|sarif] --url <url> --profile <profile> --trust-domain <name>
+               [--endpoint-spiffe-id <id>] [--endpoint-bundle <bundle.json>]
 ```
 
 各サブコマンドは assertion 1 件につき 1 行を出力する。MUST 句が 1 つでも落ちれば exit code は 1、それ以外は 0。SHOULD 違反は `WARN` として表示され exit code には影響しない。色は stdout が TTY かつ `NO_COLOR` が未設定のときだけ ON になるので、script や CI ログでも同じバイナリが安全に使える。
@@ -105,6 +107,7 @@ $ echo $?
 | `WIT-SVID.md`                         | 必須の `kid` / `typ=wit+jwt` / `alg`、`cnf.jwk` の構造とアルゴリズム、禁止された `aud`、`nbf` / `iss` の規約 |
 | `SPIFFE_Trust_Domain_and_Bundle.md`   | JWKS shape、key ごとの `kty` / `use`、`spiffe_sequence` / `spiffe_refresh_hint`、x509 の `x5c`、bundle 全体での `kid` 一意性 |
 | `SPIFFE_Trust_Domain_and_Bundle.md` §5 | bundle map: `trust_domains` の存在、trust domain 名の妥当性と一意性、内包する各 bundle、`spiffe_refresh_hint` の省略 |
+| `SPIFFE_Federation.md` §5             | bundle endpoint 設定: 必須 3 パラメータ、profile 種別、endpoint URL の scheme と userinfo、profile 固有パラメータ、bootstrap bundle |
 
 MUST 句は `spiffe/spiffe` main ブランチの commit [`dc4e9d9`](https://github.com/spiffe/spiffe/commit/dc4e9d9) (2026-08-03) を出典としている。
 
@@ -128,6 +131,31 @@ trust bundle 側では WIT の署名鍵が `use` を `wit-svid` にした JWK en
 - map の中の bundle は `spiffe_refresh_hint` を SHOULD で省略する。単体の bundle とは逆向きの要求で、refresh hint は map 全体に掛かるものだから。
 
 `kid` の一意性は bundle 単位のままなので、別々の trust domain が同じ `kid` を使っていても衝突扱いにはならない。
+
+### Federation について
+
+[SPIFFE Federation](https://github.com/spiffe/spiffe/blob/main/standards/SPIFFE_Federation.md) は、ある trust domain が別の trust domain の trust bundle を手に入れるための仕組み。相手側が *bundle endpoint* に bundle を公開し、こちらの client がそれを取りに行く。この仕様のほとんどは runtime の話 — TLS ハンドシェイク、証明書検証、HTTP GET、リダイレクト追従 — なのでスコープ外。`scc federation` が見るのは接続が始まる前に存在しているもの、つまり **bundle endpoint 設定** そのもの。§5.1 が「bundle を取得する前に client が持っていなければならない」と定めているパラメータ群。
+
+仕様はそのパラメータを定義しているが、シリアライズ形式は定義していない。だから `scc federation` はファイルではなくフラグを取る。設定ファイル形式を勝手に決めれば、仕様が一度も規定していない shape を検査することになってしまう。
+
+```bash
+# Figure 4 の例: self-serving でない https_spiffe endpoint
+scc federation \
+  --url 'https://example.com/production/bundle.json' \
+  --profile https_spiffe \
+  --trust-domain prod.example.com \
+  --endpoint-spiffe-id 'spiffe://example.com/spiffe-bundle-server'
+```
+
+チェックする内容:
+
+- §5.1 の 3 パラメータが揃っているか。欠けている場合は usage error ではなく report 上の compliance 違反として出す。欠けていること自体が違反している要求そのものだから。
+- trust domain 名が trust domain 名として妥当か。bundle map がキーに適用しているのと同じ `SPIFFE-ID.md` §2 の句を使う。
+- profile が §5.2 の定義する 2 つのいずれかか。bundle の `use` が未知の値だった場合は §4.2.2 が「consumer は無視せよ」と書いているので SHOULD 止まりだが、profile にはその逃げ道がない。transport と認証方式そのものを指す名前なので、知らない profile では接続自体が成立しない。
+- endpoint URL の scheme が `https` で、authority に userinfo が入っていないか (§5.2.1.1 と §5.2.2.1 が両 profile に対して同じ文言で要求している)。
+- `https_spiffe` では endpoint server の SPIFFE ID が設定されているか (§5.2.2.2)。設定されていればその ID に `scc id` と同じ検査を丸ごと掛ける。
+- `https_web` なのに `https_spiffe` 用のパラメータを持っている場合は WARN。§5.2.1.2 の MUST NOT が縛っているのは profile であって設定を書く運用者ではないので failure にはしない。ただし `https_web` に endpoint SPIFFE ID が付いているのはほぼ確実に profile の設定ミスで、client は気づかないまま Web PKI で endpoint を認証してしまう。
+- **self-serving** な endpoint — 自分が配る bundle と同じ trust domain に自分の SPIFFE ID が属している endpoint — には、初回取得用の bootstrap bundle が要る。渡されていればそれを trust bundle として full の検査に掛ける。self-serving *でない* 場合、§5.2.2.2 は endpoint の trust domain を別途設定すると書いており、それは設定 1 件からは確認しようがないので、`scc` は空虚な結果を出さず黙る。
 
 ## 関連プロジェクト
 
