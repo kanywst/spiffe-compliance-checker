@@ -253,3 +253,36 @@ var (
 	FedSpiffeSelfServingBundle = Clause{"SPIFFE_Federation.md", "§5.2.2.2", SeveritySHOULD,
 		"a self-serving https_spiffe endpoint SHOULD be configured with a bootstrap bundle for the first retrieval"}
 )
+
+// SPIFFE Workload Endpoint clauses (SPIFFE_Workload_Endpoint.md). Nearly all
+// of this spec is runtime — gRPC transport, the security metadata header,
+// error codes, server reflection — and stays out of scope. §4 is the one part
+// with a static shape: the SPIFFE_ENDPOINT_SOCKET value a workload is handed
+// before it ever dials the endpoint.
+var (
+	WEScheme = Clause{"SPIFFE_Workload_Endpoint.md", "§4", SeverityMUST,
+		`endpoint socket URI scheme MUST be "unix" or "tcp"`}
+	WEUnixNoAuthority = Clause{"SPIFFE_Workload_Endpoint.md", "§4", SeverityMUST,
+		"unix endpoint socket URI MUST NOT set the authority component"}
+	WEUnixAbsolutePath = Clause{"SPIFFE_Workload_Endpoint.md", "§4", SeverityMUST,
+		"unix endpoint socket URI MUST set the path to the absolute path of the socket"}
+	// §4 writes "no other component may be set" in lowercase, but follows it
+	// with an example it calls not valid, so the prohibition is as binding as
+	// the MUSTs around it.
+	WEUnixNoOtherComponents = Clause{"SPIFFE_Workload_Endpoint.md", "§4", SeverityMUST,
+		"unix endpoint socket URI MUST NOT set any component beyond scheme and path"}
+	WETCPHostIP = Clause{"SPIFFE_Workload_Endpoint.md", "§4", SeverityMUST,
+		"tcp endpoint socket URI MUST set the host to an IP address"}
+	WETCPPort = Clause{"SPIFFE_Workload_Endpoint.md", "§4", SeverityMUST,
+		"tcp endpoint socket URI MUST set the port to the TCP port number"}
+	WETCPNoOtherComponents = Clause{"SPIFFE_Workload_Endpoint.md", "§4", SeverityMUST,
+		"tcp endpoint socket URI MUST NOT set any component beyond scheme, host and port"}
+	// §3's MUST NOT forbids TCP unless the network lets the endpoint strongly
+	// authenticate workloads by source IP (localhost, link-local) "or other
+	// strong network-level assertions (e.g., via an SDN policy)". A loopback
+	// or link-local address satisfies it on its face; any other address may
+	// still be compliant behind a policy no URI can show, so a static check
+	// can only flag it, not fail it.
+	WETCPLocalHost = Clause{"SPIFFE_Workload_Endpoint.md", "§3", SeveritySHOULD,
+		"tcp endpoint host SHOULD be loopback or link-local; any other address relies on network-level authentication scc cannot see"}
+)

@@ -8,7 +8,7 @@
 
 ![demo](./assets/demo.gif)
 
-[SPIFFE](https://spiffe.io) の artifact を静的に検証する CLI。SPIFFE ID 文字列、X.509-SVID 証明書、JWT-SVID / WIT-SVID トークン、Trust Bundle、Bundle Map、Bundle Endpoint 設定のいずれかを `scc` に渡すと、[SPIFFE 仕様](https://github.com/spiffe/spiffe/tree/main/standards) の MUST / MUST NOT 句のうち何が満たされていて何が違反しているかを 1 行ずつ報告する。各行には仕様書名とセクション番号が付くので、落ちた assertion からそのまま仕様本文に飛んで根拠を確認できる。
+[SPIFFE](https://spiffe.io) の artifact を静的に検証する CLI。SPIFFE ID 文字列、X.509-SVID 証明書、JWT-SVID / WIT-SVID トークン、Trust Bundle、Bundle Map、Bundle Endpoint 設定、Workload Endpoint のソケットアドレスのいずれかを `scc` に渡すと、[SPIFFE 仕様](https://github.com/spiffe/spiffe/tree/main/standards) の MUST / MUST NOT 句のうち何が満たされていて何が違反しているかを 1 行ずつ報告する。各行には仕様書名とセクション番号が付くので、落ちた assertion からそのまま仕様本文に飛んで根拠を確認できる。
 
 SPIFFE は CNCF の仕様セットで、`spiffe://...` 形式の workload identity とそれを運ぶ SVID を定義している。SPIRE、Istio の mTLS、Cilium の mutual auth、社内製の実装などが SPIFFE 準拠を名乗っている。仕様は [spiffe/spiffe](https://github.com/spiffe/spiffe) の 11 本の markdown に分散しているが、公式の conformance suite は存在しない。`scc` はその空白のうち「外から artifact だけ見て検証できる範囲」をカバーする。Workload attestation、鍵ローテーション、Workload API endpoint の振る舞い、特定 bundle に対する署名検証などの動的な側面はスコープ外。
 
@@ -55,6 +55,7 @@ scc bundle     [--format text|json|sarif] <bundle.json>
 scc bundle-map [--format text|json|sarif] <bundle-map.json>
 scc federation [--format text|json|sarif] --url <url> --profile <profile> --trust-domain <name>
                [--endpoint-spiffe-id <id>] [--endpoint-bundle <bundle.json>]
+scc workload-endpoint [--format text|json|sarif] [<socket-uri>]
 ```
 
 各サブコマンドは assertion 1 件につき 1 行を出力する。MUST 句が 1 つでも落ちれば exit code は 1、それ以外は 0。SHOULD 違反は `WARN` として表示され exit code には影響しない。色は stdout が TTY かつ `NO_COLOR` が未設定のときだけ ON になるので、script や CI ログでも同じバイナリが安全に使える。
@@ -108,6 +109,7 @@ $ echo $?
 | `SPIFFE_Trust_Domain_and_Bundle.md`   | JWKS shape、key ごとの `kty` / `use`、`spiffe_sequence` / `spiffe_refresh_hint`、x509 の `x5c`、bundle 全体での `kid` 一意性 |
 | `SPIFFE_Trust_Domain_and_Bundle.md` §5 | bundle map: `trust_domains` の存在、trust domain 名の妥当性と一意性、内包する各 bundle、`spiffe_refresh_hint` の省略 |
 | `SPIFFE_Federation.md` §5             | bundle endpoint 設定: 必須 3 パラメータ、profile 種別、endpoint URL の scheme と userinfo、profile 固有パラメータ、bootstrap bundle |
+| `SPIFFE_Workload_Endpoint.md` §4      | `SPIFFE_ENDPOINT_SOCKET`: `unix` / `tcp` scheme、`unix` は authority なし + 絶対パス、`tcp` は IP の host と port、それ以外の component なし |
 
 MUST 句は `spiffe/spiffe` main ブランチの commit [`dc4e9d9`](https://github.com/spiffe/spiffe/commit/dc4e9d9) (2026-08-03) を出典としている。
 
@@ -156,6 +158,26 @@ scc federation \
 - `https_spiffe` では endpoint server の SPIFFE ID が設定されているか (§5.2.2.2)。設定されていればその ID に `scc id` と同じ検査を丸ごと掛ける。
 - `https_web` なのに `https_spiffe` 用のパラメータを持っている場合は WARN。§5.2.1.2 の MUST NOT が縛っているのは profile であって設定を書く運用者ではないので failure にはしない。ただし `https_web` に endpoint SPIFFE ID が付いているのはほぼ確実に profile の設定ミスで、client は気づかないまま Web PKI で endpoint を認証してしまう。
 - **self-serving** な endpoint — 自分が配る bundle と同じ trust domain に自分の SPIFFE ID が属している endpoint — には、初回取得用の bootstrap bundle が要る。渡されていればそれを trust bundle として full の検査に掛ける。self-serving *でない* 場合、§5.2.2.2 は endpoint の trust domain を別途設定すると書いており、それは設定 1 件からは確認しようがないので、`scc` は空虚な結果を出さず黙る。
+
+### Workload Endpoint について
+
+[SPIFFE Workload Endpoint](https://github.com/spiffe/spiffe/blob/main/standards/SPIFFE_Workload_Endpoint.md) は workload が SVID を取りに行く先。仕様のほぼ全部は runtime の話 (gRPC、`workload.spiffe.io` メタデータヘッダ、エラーコード、server reflection) でスコープ外。例外が §4 で、`SPIFFE_ENDPOINT_SOCKET` で workload に渡すアドレスには決まった URI の shape があり、間違っていれば dial する前の段階で壊れている。
+
+```bash
+scc workload-endpoint 'unix:///run/spire/agent/public/api.sock'
+scc workload-endpoint 'tcp://127.0.0.1:8000'
+
+# 引数なし: この workload が実際に使う値を検査する。§4 はクライアントに
+# SPIFFE_ENDPOINT_SOCKET へのフォールバックを課しているので、scc も同じにしてある。
+scc workload-endpoint
+```
+
+チェック内容:
+
+- scheme が `unix` か `tcp` であること。`/tmp/agent.sock` のような素のパスはソケットの場所ではあっても URI ではないので、ここで落ちる。
+- `unix`: authority を持たず、ソケットの絶対パスを持つこと。スラッシュが 1 本足りない `unix://tmp/agent.sock` は定番の typo で、`tmp` が authority 扱いになるのをそのまま報告する。
+- `tcp`: host が IP アドレス (`localhost` のようなホスト名は不可) で、port が TCP ポート番号であること。§4 自身が不正例に挙げる `tcp://127.0.0.1:8000/foo` は、scheme / host / port 以外を持てないので落ちる。
+- `tcp` の host が loopback でも link-local でもなければ WARN。§3 は送信元 IP で workload を強く認証できない限り TCP を禁じているが、SDN ポリシーのような「その他の強いネットワークレベルの保証」も認めていて、それはアドレスからは見えない。だから failure ではなく warning にしている。
 
 ## 関連プロジェクト
 

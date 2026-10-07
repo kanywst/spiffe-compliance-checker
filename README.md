@@ -8,7 +8,7 @@
 
 ![demo](./assets/demo.gif)
 
-A static compliance checker for [SPIFFE](https://spiffe.io) artifacts. Pass `scc` a SPIFFE ID, an X.509-SVID certificate, a JWT-SVID or WIT-SVID token, a trust bundle, a bundle map, or a bundle endpoint configuration, and it tells you which MUST / MUST NOT clauses from the [SPIFFE spec](https://github.com/spiffe/spiffe/tree/main/standards) the artifact satisfies or violates. Every output line cites the source document and section so a failed check reads as a spec walkthrough.
+A static compliance checker for [SPIFFE](https://spiffe.io) artifacts. Pass `scc` a SPIFFE ID, an X.509-SVID certificate, a JWT-SVID or WIT-SVID token, a trust bundle, a bundle map, a bundle endpoint configuration, or a Workload Endpoint socket address, and it tells you which MUST / MUST NOT clauses from the [SPIFFE spec](https://github.com/spiffe/spiffe/tree/main/standards) the artifact satisfies or violates. Every output line cites the source document and section so a failed check reads as a spec walkthrough.
 
 SPIFFE is the CNCF spec set that defines `spiffe://...` workload identities and the SVIDs that carry them. It backs SPIRE, Istio's mTLS layer, Cilium's mutual auth, and many in-house implementations. The spec lives across eleven markdown files in [spiffe/spiffe](https://github.com/spiffe/spiffe) and ships without an official conformance suite. `scc` covers the slice of compliance that is checkable from outside: the shape of the artifacts themselves. Runtime concerns (workload attestation, key rotation, Workload API endpoint behaviour, signature verification against a specific bundle) are out of scope.
 
@@ -55,6 +55,7 @@ scc bundle     [--format text|json|sarif] <bundle.json>
 scc bundle-map [--format text|json|sarif] <bundle-map.json>
 scc federation [--format text|json|sarif] --url <url> --profile <profile> --trust-domain <name>
                [--endpoint-spiffe-id <id>] [--endpoint-bundle <bundle.json>]
+scc workload-endpoint [--format text|json|sarif] [<socket-uri>]
 ```
 
 Each subcommand prints one line per checked clause and exits non-zero if any MUST clause fails. SHOULD violations surface as `WARN` and do not change the exit code. Colors render only when stdout is a TTY and `NO_COLOR` is unset, so the same binary is safe in scripts and CI logs.
@@ -108,6 +109,7 @@ $ echo $?
 | `SPIFFE_Trust_Domain_and_Bundle.md`   | JWKS shape, `kty` / `use` per key, `spiffe_sequence` / `spiffe_refresh_hint`, `x5c` for x509, bundle-wide `kid` uniqueness |
 | `SPIFFE_Trust_Domain_and_Bundle.md` §5 | bundle map: `trust_domains` presence, trust domain name validity and uniqueness, each embedded bundle, omitted `spiffe_refresh_hint` |
 | `SPIFFE_Federation.md` §5             | bundle endpoint configuration: the three required parameters, profile type, endpoint URL scheme and userinfo, per-profile parameters, bootstrap bundle |
+| `SPIFFE_Workload_Endpoint.md` §4      | `SPIFFE_ENDPOINT_SOCKET`: `unix` / `tcp` scheme, no authority and an absolute path for `unix`, IP host and port for `tcp`, no other components |
 
 The MUST clauses are pulled directly from the `spiffe/spiffe` main branch at commit [`dc4e9d9`](https://github.com/spiffe/spiffe/commit/dc4e9d9) (2026-08-03).
 
@@ -156,6 +158,26 @@ What it checks:
 - `https_spiffe` sets the endpoint server's SPIFFE ID (§5.2.2.2), which then gets the full `scc id` sweep.
 - An `https_web` entry carrying `https_spiffe` parameters warns. §5.2.1.2's MUST NOT binds the profile rather than the operator, so this is not a failure — but an endpoint SPIFFE ID under `https_web` is nearly always a profile set to the wrong value, and the client will silently authenticate with Web PKI instead.
 - A **self-serving** endpoint — one whose SPIFFE ID lives in the trust domain whose bundle it serves — is expected to carry a bootstrap bundle for the first retrieval. When one is supplied, it is checked as a full trust bundle. When the endpoint is *not* self-serving, §5.2.2.2 says its trust domain is configured separately, which a single configuration cannot show, so `scc` stays silent rather than emitting a vacuous result.
+
+### Workload Endpoint
+
+The [SPIFFE Workload Endpoint](https://github.com/spiffe/spiffe/blob/main/standards/SPIFFE_Workload_Endpoint.md) is where a workload fetches its SVIDs. The spec is almost entirely runtime — gRPC, the `workload.spiffe.io` metadata header, error codes, server reflection — and all of that stays out of scope. §4 is the exception: the address a workload is handed in `SPIFFE_ENDPOINT_SOCKET` has a fixed URI shape, and a wrong one fails before anything is dialed.
+
+```bash
+scc workload-endpoint 'unix:///run/spire/agent/public/api.sock'
+scc workload-endpoint 'tcp://127.0.0.1:8000'
+
+# No argument: check the value this workload would actually use. §4 makes
+# clients fall back to SPIFFE_ENDPOINT_SOCKET, so scc does too.
+scc workload-endpoint
+```
+
+What it checks:
+
+- The scheme is `unix` or `tcp`. A bare path such as `/tmp/agent.sock` is a socket location but not a URI, and fails here.
+- `unix`: no authority, and an absolute socket path. `unix://tmp/agent.sock` — one slash short — is the classic typo: `tmp` becomes the authority, and the check says so.
+- `tcp`: the host is an IP address (a hostname such as `localhost` is not) and the port is a TCP port number. §4's own counter-example, `tcp://127.0.0.1:8000/foo`, fails because nothing but scheme, host and port may be set.
+- A `tcp` host that is neither loopback nor link-local warns. §3 forbids TCP unless the endpoint can strongly authenticate workloads by source IP, but it also allows "other strong network-level assertions" such as an SDN policy, which no address can show — so this is a warning, not a failure.
 
 ## Related
 

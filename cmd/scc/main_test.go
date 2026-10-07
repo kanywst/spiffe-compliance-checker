@@ -110,7 +110,7 @@ func TestUsageListsEverySubcommand(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("--help exit = %d, want 0", code)
 	}
-	for _, sub := range []string{"id", "x509-svid", "jwt-svid", "wit-svid", "bundle", "bundle-map", "federation"} {
+	for _, sub := range []string{"id", "x509-svid", "jwt-svid", "wit-svid", "bundle", "bundle-map", "federation", "workload-endpoint"} {
 		if !strings.Contains(stdout, "scc "+sub) {
 			t.Errorf("usage does not mention subcommand %q\n%s", sub, stdout)
 		}
@@ -237,6 +237,57 @@ func TestRunFederationSARIFHasNoLocation(t *testing.T) {
 		if len(res.Locations) != 0 {
 			t.Errorf("result %d carries a location, want none\n%s", i, stdout)
 		}
+	}
+}
+
+func TestRunWorkloadEndpointExitCodes(t *testing.T) {
+	if code, out, _ := runCapture("workload-endpoint", "unix:///run/spire/agent.sock"); code != 0 {
+		t.Errorf("compliant unix socket exit = %d, want 0\n%s", code, out)
+	}
+	// §4's own counter-example.
+	if code, out, _ := runCapture("workload-endpoint", "tcp://127.0.0.1:8000/foo"); code != 1 {
+		t.Errorf("tcp socket with a path exit = %d, want 1\n%s", code, out)
+	}
+	// The §3 TCP limit is only a warning, so it must not flip the exit code.
+	if code, out, _ := runCapture("workload-endpoint", "tcp://10.0.0.5:8000"); code != 0 {
+		t.Errorf("routable tcp host exit = %d, want 0\n%s", code, out)
+	}
+}
+
+// TestRunWorkloadEndpointEnvFallback pins §4's fallback: with no argument the
+// checker reads SPIFFE_ENDPOINT_SOCKET, and an empty value is checked rather
+// than treated as unset.
+func TestRunWorkloadEndpointEnvFallback(t *testing.T) {
+	t.Setenv("SPIFFE_ENDPOINT_SOCKET", "unix:///run/spire/agent.sock")
+	code, out, _ := runCapture("workload-endpoint")
+	if code != 0 || !strings.Contains(out, "unix:///run/spire/agent.sock") {
+		t.Errorf("env fallback exit = %d, want 0 and the env value in the report\n%s", code, out)
+	}
+
+	t.Setenv("SPIFFE_ENDPOINT_SOCKET", "")
+	if code, out, _ := runCapture("workload-endpoint"); code != 1 {
+		t.Errorf("empty env value exit = %d, want 1\n%s", code, out)
+	}
+
+	// An explicit argument wins over the environment.
+	t.Setenv("SPIFFE_ENDPOINT_SOCKET", "bogus")
+	if code, out, _ := runCapture("workload-endpoint", "tcp://127.0.0.1:8000"); code != 0 {
+		t.Errorf("explicit argument exit = %d, want 0\n%s", code, out)
+	}
+}
+
+func TestRunWorkloadEndpointUsageErrors(t *testing.T) {
+	if code, _, stderr := runCapture("workload-endpoint", "unix:///a", "unix:///b"); code != 2 {
+		t.Errorf("two-arg exit = %d, want 2 (stderr: %q)", code, stderr)
+	}
+	// t.Setenv registers the restore; Unsetenv then makes the variable absent.
+	t.Setenv("SPIFFE_ENDPOINT_SOCKET", "")
+	if err := os.Unsetenv("SPIFFE_ENDPOINT_SOCKET"); err != nil {
+		t.Fatal(err)
+	}
+	code, _, stderr := runCapture("workload-endpoint")
+	if code != 2 || !strings.Contains(stderr, "SPIFFE_ENDPOINT_SOCKET is not set") {
+		t.Errorf("no arg, no env exit = %d, want 2 (stderr: %q)", code, stderr)
 	}
 }
 

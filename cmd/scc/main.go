@@ -17,6 +17,7 @@ import (
 	"github.com/kanywst/spiffe-compliance-checker/internal/jwtsvid"
 	"github.com/kanywst/spiffe-compliance-checker/internal/report"
 	"github.com/kanywst/spiffe-compliance-checker/internal/witsvid"
+	"github.com/kanywst/spiffe-compliance-checker/internal/workloadendpoint"
 	"github.com/kanywst/spiffe-compliance-checker/internal/x509svid"
 )
 
@@ -40,6 +41,7 @@ Usage:
   scc federation [--format text|json|sarif] --url <url> --profile <profile>
                  --trust-domain <name> [--endpoint-spiffe-id <id>]
                  [--endpoint-bundle <bundle.json>]
+  scc workload-endpoint [--format text|json|sarif] [<socket-uri>]
 
 Each subcommand prints one line per checked clause. Exit code is 1 if any
 MUST clause fails, 0 otherwise. SHOULD violations are reported as WARN and
@@ -49,6 +51,11 @@ scc federation takes a SPIFFE bundle endpoint configuration rather than a
 file: SPIFFE_Federation.md §5.1 defines the parameters a client must hold,
 not a format they are written in. --endpoint-spiffe-id and --endpoint-bundle
 are the additions the https_spiffe profile defines.
+
+scc workload-endpoint checks a SPIFFE_ENDPOINT_SOCKET value
+(SPIFFE_Workload_Endpoint.md §4). With no argument it reads the
+SPIFFE_ENDPOINT_SOCKET environment variable, the same fallback §4 requires of
+conforming clients.
 
 WIT-SVID.md is marked Incubating in spiffe/spiffe, so its clauses may still
 change; the other specs scc checks are Stable.
@@ -90,6 +97,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runBundleMap(rest, stdout, stderr)
 	case "federation":
 		return runFederation(rest, stdout, stderr)
+	case "workload-endpoint":
+		return runWorkloadEndpoint(rest, stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "scc: unknown subcommand %q\n\n%s", cmd, usage)
 		return 2
@@ -263,5 +272,37 @@ func runFederation(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "scc federation: %v\n", err)
 		return 2
 	}
+	return emit(rep, *format, stdout, stderr)
+}
+
+// runWorkloadEndpoint falls back to SPIFFE_ENDPOINT_SOCKET when no argument is
+// given, mirroring §4's rule for clients that are not explicitly configured,
+// so `scc workload-endpoint` inside a workload checks the address it would
+// actually dial. A variable that is set but empty is still checked: an empty
+// value is a misconfiguration, not an absence.
+func runWorkloadEndpoint(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("workload-endpoint", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	format := addFormatFlag(fs)
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	var value string
+	switch fs.NArg() {
+	case 0:
+		v, ok := os.LookupEnv(workloadendpoint.EnvVar)
+		if !ok {
+			fmt.Fprintf(stderr, "scc workload-endpoint: no socket URI given and %s is not set\n", workloadendpoint.EnvVar)
+			return 2
+		}
+		value = v
+	case 1:
+		value = fs.Arg(0)
+	default:
+		fmt.Fprintln(stderr, "scc workload-endpoint: expected at most one socket URI")
+		return 2
+	}
+	rep := &report.Report{Subject: "scc workload-endpoint  " + value}
+	workloadendpoint.Check(rep, value)
 	return emit(rep, *format, stdout, stderr)
 }
