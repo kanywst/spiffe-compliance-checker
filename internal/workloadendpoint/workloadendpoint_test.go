@@ -55,18 +55,21 @@ func TestCheck(t *testing.T) {
 			wantContainAny: []string{"carries an IPv6 zone"},
 		},
 		{
-			// url.Parse splits a bare IPv6 address at its last colon, which
-			// would read fe80::1:8000 as host fe80::1, port 8000.
+			// Some Go releases (1.26.0) reject a bare IPv6 authority in
+			// url.Parse; others (1.26.8, 1.27) accept it and split at the last
+			// colon, reading fe80::1:8000 as host fe80::1, port 8000. Either
+			// way the value must fail and must never reach the §3 judgement,
+			// so the assertions avoid the message that differs.
 			name:           "tcp unbracketed IPv6 link-local rejected",
 			in:             "tcp://fe80::1:8000",
 			wantFailed:     true,
-			wantContainAny: []string{"without the [ ] RFC 3986 requires"},
+			wantContainAny: []string{"!loopback or link-local"},
 		},
 		{
 			name:           "tcp unbracketed IPv6 loopback rejected",
 			in:             "tcp://::1:8000",
 			wantFailed:     true,
-			wantContainAny: []string{"without the [ ] RFC 3986 requires"},
+			wantContainAny: []string{"!loopback or link-local"},
 		},
 		{
 			name:           "uppercase scheme accepted",
