@@ -119,9 +119,9 @@ func checkTCP(r *report.Report, s string, u *url.URL) {
 		// "every interface" for a listener, not a place a client can dial,
 		// which makes them the likeliest server-side value to leak into a
 		// client's environment.
-		r.Fail(spec.WETCPLocalHost, fmt.Sprintf("host=%q is neither loopback nor link-local (scc note: the unspecified address is a listener wildcard, not an address a client dials)", addr.String()))
+		r.Fail(spec.WETCPLocalHost, fmt.Sprintf("host=%q is neither loopback nor link-local, and scc cannot see network-level assertions (scc note: the unspecified address is a listener wildcard, not an address a client dials)", addr.String()))
 	default:
-		r.Fail(spec.WETCPLocalHost, fmt.Sprintf("host=%q is neither loopback nor link-local", addr.String()))
+		r.Fail(spec.WETCPLocalHost, fmt.Sprintf("host=%q is neither loopback nor link-local, and scc cannot see network-level assertions", addr.String()))
 	}
 }
 
@@ -173,10 +173,16 @@ func checkTCPPort(r *report.Report, u *url.URL) {
 		r.Fail(spec.WETCPPort, "port not set")
 		return
 	}
-	// Port 0 asks the OS for any free port when listening; it never names
-	// the one a listen socket is actually bound to.
-	if n, err := strconv.ParseUint(port, 10, 16); err != nil || n == 0 {
+	n, err := strconv.ParseUint(port, 10, 16)
+	if err != nil {
 		r.Fail(spec.WETCPPort, fmt.Sprintf("port=%q is not a TCP port number", port))
+		return
+	}
+	// §4 asks for the port of the listen socket, and a bound listen socket
+	// never has port 0 — 0 only asks the OS to choose one. The clause text
+	// carries that wording, so the detail says which part of it fails.
+	if n == 0 {
+		r.Fail(spec.WETCPPort, fmt.Sprintf("port=%q is not the port of a listen socket (port 0 only asks the OS to choose one)", port))
 		return
 	}
 	r.Pass(spec.WETCPPort, port)

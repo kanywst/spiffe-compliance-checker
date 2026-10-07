@@ -266,27 +266,27 @@ var (
 	// any of them. A parse failure is reported here rather than against the
 	// scheme clause, which a value like "unix://%zz/p" does satisfy.
 	WEURI = Clause{"SPIFFE_Workload_Endpoint.md", "§4", SeverityMUST,
-		`endpoint socket value "is structured as an RFC 3986 URI"`}
+		`the value of SPIFFE_ENDPOINT_SOCKET "is structured as an RFC 3986 URI"`}
 	WEScheme = Clause{"SPIFFE_Workload_Endpoint.md", "§4", SeverityMUST,
-		`endpoint socket URI scheme MUST be "unix" or "tcp"`}
+		`the scheme MUST be set to either "unix" or "tcp"`}
 	WEUnixNoAuthority = Clause{"SPIFFE_Workload_Endpoint.md", "§4", SeverityMUST,
-		"unix endpoint socket URI MUST NOT set the authority component"}
+		"unix: the authority component MUST NOT be set"}
 	WEUnixAbsolutePath = Clause{"SPIFFE_Workload_Endpoint.md", "§4", SeverityMUST,
-		"unix endpoint socket URI MUST set the path to the absolute path of the socket"}
+		"unix: the path component MUST be set to the absolute path of the SPIFFE Workload Endpoint Unix Domain Socket"}
 	// §4 writes "no other component may be set" in lowercase, but follows it
 	// with an example it calls not valid, so the prohibition is as binding as
 	// the MUSTs around it. The text quotes the spec rather than restating it
 	// as a capitalised MUST NOT it does not contain.
 	WEUnixNoOtherComponents = Clause{"SPIFFE_Workload_Endpoint.md", "§4", SeverityMUST,
-		`unix endpoint socket URI: "the scheme and path components are mandatory, and no other component may be set"`}
+		`unix: "the scheme and path components are mandatory, and no other component may be set"`}
 	WETCPHostIP = Clause{"SPIFFE_Workload_Endpoint.md", "§4", SeverityMUST,
-		"tcp endpoint socket URI MUST set the host to an IP address"}
+		"tcp: the host component of the authority MUST be set to an IP address"}
 	WETCPPort = Clause{"SPIFFE_Workload_Endpoint.md", "§4", SeverityMUST,
-		"tcp endpoint socket URI MUST set the port to the TCP port number"}
+		"tcp: the port component of the authority MUST be set to the TCP port number of the SPIFFE Workload Endpoint TCP listen socket"}
 	// Same lowercase prohibition as WEUnixNoOtherComponents, backed by §4's
 	// own invalid example, tcp://127.0.0.1:8000/foo.
 	WETCPNoOtherComponents = Clause{"SPIFFE_Workload_Endpoint.md", "§4", SeverityMUST,
-		`tcp endpoint socket URI: "the scheme, host, and port components are mandatory, and no other component may be set"`}
+		`tcp: "the scheme, host, and port components are mandatory, and no other component may be set"`}
 	// §3 is a MUST NOT: TCP "MUST NOT be used unless the underlying network
 	// allows the Workload Endpoint server to strongly authenticate the
 	// workload based on source IP address (e.g., over a localhost or
@@ -295,8 +295,9 @@ var (
 	// its face; any other address may still be compliant behind a policy no
 	// URI can show. The clause is therefore registered at SHOULD severity so
 	// that such a host warns instead of failing — scc is reporting that it
-	// cannot decide, not that §3 is a recommendation — and the text says so
-	// rather than inventing a SHOULD the spec does not contain.
+	// cannot decide, not that §3 is a recommendation. The text is §3's
+	// sentence verbatim; the "scc cannot see that" caveat belongs in the
+	// failure detail, not in what is presented as spec text.
 	WETCPLocalHost = Clause{"SPIFFE_Workload_Endpoint.md", "§3", SeveritySHOULD,
-		"tcp transport MUST NOT be used unless the network strongly authenticates workloads by source IP (e.g. localhost, link-local) or other network-level assertions; scc can confirm only loopback and link-local hosts"}
+		"TCP transport MUST NOT be used unless the underlying network allows the Workload Endpoint server to strongly authenticate the workload based on source IP address (e.g., over a localhost or link-local network), or other strong network-level assertions (e.g., via an SDN policy)"}
 )

@@ -63,19 +63,19 @@ func TestCheck(t *testing.T) {
 			name:           "tcp unbracketed IPv6 link-local rejected",
 			in:             "tcp://fe80::1:8000",
 			wantFailed:     true,
-			wantContainAny: []string{"!loopback or link-local"},
+			wantContainAny: []string{"!localhost or link-local"},
 		},
 		{
 			name:           "tcp unbracketed IPv6 loopback rejected",
 			in:             "tcp://::1:8000",
 			wantFailed:     true,
-			wantContainAny: []string{"!loopback or link-local"},
+			wantContainAny: []string{"!localhost or link-local"},
 		},
 		{
 			name:           "uppercase scheme accepted",
 			in:             "UNIX:///tmp/agent.sock",
 			wantFailed:     false,
-			wantContainAny: []string{`scheme MUST be "unix" or "tcp"`},
+			wantContainAny: []string{`scheme MUST be set to either "unix" or "tcp"`},
 		},
 		{
 			// An unknown scheme leaves every per-scheme clause without
@@ -85,8 +85,8 @@ func TestCheck(t *testing.T) {
 			wantFailed: true,
 			wantContainAny: []string{
 				`scheme="http"`,
-				"!tcp endpoint socket URI",
-				"!unix endpoint socket URI",
+				"!tcp: ",
+				"!unix: ",
 			},
 		},
 		{
@@ -107,7 +107,7 @@ func TestCheck(t *testing.T) {
 			name:           "unparseable URI reported once",
 			in:             "unix:///tmp/agent\x7f.sock",
 			wantFailed:     true,
-			wantContainAny: []string{"URI parse error", "!MUST NOT set the authority", `!scheme MUST be "unix" or "tcp"`},
+			wantContainAny: []string{"URI parse error", "!authority component MUST NOT be set", `!scheme MUST be set to either "unix" or "tcp"`},
 		},
 		{
 			// "unix://tmp/agent.sock" is the two-slash typo: "tmp" becomes the
@@ -155,7 +155,7 @@ func TestCheck(t *testing.T) {
 			name:           "invalid escape blamed on the URI, not the scheme",
 			in:             "unix://%zz/p",
 			wantFailed:     true,
-			wantContainAny: []string{"RFC 3986 URI", "URI parse error", `!scheme MUST be "unix" or "tcp"`},
+			wantContainAny: []string{"RFC 3986 URI", "URI parse error", `!scheme MUST be set to either "unix" or "tcp"`},
 		},
 		{
 			// Brackets are for IPv6 / IPvFuture only (RFC 3986 §3.2.2);
@@ -164,7 +164,7 @@ func TestCheck(t *testing.T) {
 			name:           "tcp bracketed IPv4 rejected",
 			in:             "tcp://[127.0.0.1]:8000",
 			wantFailed:     true,
-			wantContainAny: []string{"URI parse error", "!MUST set the host to an IP address"},
+			wantContainAny: []string{"URI parse error", "!MUST be set to an IP address"},
 		},
 		{
 			// url.Parse accepts both; RFC 3986 requires them percent-encoded.
@@ -232,7 +232,7 @@ func TestCheck(t *testing.T) {
 			name:           "tcp port zero rejected",
 			in:             "tcp://127.0.0.1:0",
 			wantFailed:     true,
-			wantContainAny: []string{`port="0" is not a TCP port number`},
+			wantContainAny: []string{`port="0" is not the port of a listen socket`},
 		},
 		{
 			name:           "tcp port out of range rejected",
@@ -260,7 +260,7 @@ func TestCheck(t *testing.T) {
 			wantContainAny: []string{
 				"authority not set",
 				// No host means no §3 judgement either.
-				"!loopback or link-local",
+				"!localhost or link-local",
 			},
 		},
 		{
