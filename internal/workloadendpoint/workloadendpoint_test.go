@@ -107,7 +107,7 @@ func TestCheck(t *testing.T) {
 			name:           "unparseable URI reported once",
 			in:             "unix:///tmp/agent\x7f.sock",
 			wantFailed:     true,
-			wantContainAny: []string{"URI parse error", "!MUST NOT set the authority"},
+			wantContainAny: []string{"URI parse error", "!MUST NOT set the authority", `!scheme MUST be "unix" or "tcp"`},
 		},
 		{
 			// "unix://tmp/agent.sock" is the two-slash typo: "tmp" becomes the
@@ -148,6 +148,36 @@ func TestCheck(t *testing.T) {
 			in:             "unix:///tmp/agent.sock#",
 			wantFailed:     true,
 			wantContainAny: []string{"fragment set"},
+		},
+		{
+			// The scheme is fine; only the URI is broken, and the report must
+			// cite that rather than the scheme clause.
+			name:           "invalid escape blamed on the URI, not the scheme",
+			in:             "unix://%zz/p",
+			wantFailed:     true,
+			wantContainAny: []string{"RFC 3986 URI", "URI parse error", `!scheme MUST be "unix" or "tcp"`},
+		},
+		{
+			// Brackets are for IPv6 / IPvFuture only (RFC 3986 §3.2.2);
+			// url.Parse rejects a bracketed IPv4 address on every Go release
+			// this module supports, so it can never reach a host PASS.
+			name:           "tcp bracketed IPv4 rejected",
+			in:             "tcp://[127.0.0.1]:8000",
+			wantFailed:     true,
+			wantContainAny: []string{"URI parse error", "!MUST set the host to an IP address"},
+		},
+		{
+			// A listen-side wildcard leaking into a client's environment.
+			name:           "tcp unspecified address warns",
+			in:             "tcp://0.0.0.0:8000",
+			wantFailed:     false,
+			wantContainAny: []string{"WARN", "unspecified address"},
+		},
+		{
+			name:           "tcp IPv6 unspecified address warns",
+			in:             "tcp://[::]:8000",
+			wantFailed:     false,
+			wantContainAny: []string{"WARN", "unspecified address"},
 		},
 		{
 			// A "?" inside the fragment is fragment text, not a query.

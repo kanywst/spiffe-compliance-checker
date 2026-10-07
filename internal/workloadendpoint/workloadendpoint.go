@@ -30,9 +30,10 @@ func Check(r *report.Report, s string) {
 	u, err := url.Parse(s)
 	if err != nil {
 		// A URI that will not parse leaves no components to inspect.
-		r.Fail(spec.WEScheme, fmt.Sprintf("URI parse error: %v", err))
+		r.Fail(spec.WEURI, fmt.Sprintf("URI parse error: %v", err))
 		return
 	}
+	r.Pass(spec.WEURI, "")
 
 	// RFC 3986 makes the scheme case-insensitive; url.Parse already lowercases
 	// u.Scheme, so "UNIX" lands here as "unix".
@@ -101,10 +102,17 @@ func checkTCP(r *report.Report, s string, u *url.URL) {
 		// Without an IP address there is no host to judge the §3 limit by.
 		return
 	}
-	if a := addr.Unmap(); a.IsLoopback() || a.IsLinkLocalUnicast() {
+	switch a := addr.Unmap(); {
+	case a.IsLoopback() || a.IsLinkLocalUnicast():
 		r.Pass(spec.WETCPLocalHost, addr.String())
-	} else {
-		r.Fail(spec.WETCPLocalHost, fmt.Sprintf("host=%q", addr.String()))
+	case a.IsUnspecified():
+		// 0.0.0.0 and :: are IP addresses, so §4's host clause holds, but
+		// they name "every interface" for a listener, not a place a client
+		// can dial — which also makes them the likeliest server-side value to
+		// leak into a client's environment.
+		r.Fail(spec.WETCPLocalHost, fmt.Sprintf("host=%q is the unspecified address, a listen-side wildcard rather than an endpoint to dial", addr.String()))
+	default:
+		r.Fail(spec.WETCPLocalHost, fmt.Sprintf("host=%q is neither loopback nor link-local", addr.String()))
 	}
 }
 

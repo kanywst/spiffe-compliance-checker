@@ -260,6 +260,13 @@ var (
 // with a static shape: the SPIFFE_ENDPOINT_SOCKET value a workload is handed
 // before it ever dials the endpoint.
 var (
+	// §4 states the URI requirement declaratively ("is structured as an RFC
+	// 3986 URI") rather than with a MUST, but every MUST after it is phrased
+	// in terms of URI components, so a value that is not a URI cannot satisfy
+	// any of them. A parse failure is reported here rather than against the
+	// scheme clause, which a value like "unix://%zz/p" does satisfy.
+	WEURI = Clause{"SPIFFE_Workload_Endpoint.md", "§4", SeverityMUST,
+		`endpoint socket value "is structured as an RFC 3986 URI"`}
 	WEScheme = Clause{"SPIFFE_Workload_Endpoint.md", "§4", SeverityMUST,
 		`endpoint socket URI scheme MUST be "unix" or "tcp"`}
 	WEUnixNoAuthority = Clause{"SPIFFE_Workload_Endpoint.md", "§4", SeverityMUST,
@@ -268,21 +275,28 @@ var (
 		"unix endpoint socket URI MUST set the path to the absolute path of the socket"}
 	// §4 writes "no other component may be set" in lowercase, but follows it
 	// with an example it calls not valid, so the prohibition is as binding as
-	// the MUSTs around it.
+	// the MUSTs around it. The text quotes the spec rather than restating it
+	// as a capitalised MUST NOT it does not contain.
 	WEUnixNoOtherComponents = Clause{"SPIFFE_Workload_Endpoint.md", "§4", SeverityMUST,
-		"unix endpoint socket URI MUST NOT set any component beyond scheme and path"}
+		`unix endpoint socket URI: "the scheme and path components are mandatory, and no other component may be set"`}
 	WETCPHostIP = Clause{"SPIFFE_Workload_Endpoint.md", "§4", SeverityMUST,
 		"tcp endpoint socket URI MUST set the host to an IP address"}
 	WETCPPort = Clause{"SPIFFE_Workload_Endpoint.md", "§4", SeverityMUST,
 		"tcp endpoint socket URI MUST set the port to the TCP port number"}
+	// Same lowercase prohibition as WEUnixNoOtherComponents, backed by §4's
+	// own invalid example, tcp://127.0.0.1:8000/foo.
 	WETCPNoOtherComponents = Clause{"SPIFFE_Workload_Endpoint.md", "§4", SeverityMUST,
-		"tcp endpoint socket URI MUST NOT set any component beyond scheme, host and port"}
-	// §3's MUST NOT forbids TCP unless the network lets the endpoint strongly
-	// authenticate workloads by source IP (localhost, link-local) "or other
-	// strong network-level assertions (e.g., via an SDN policy)". A loopback
-	// or link-local address satisfies it on its face; any other address may
-	// still be compliant behind a policy no URI can show, so a static check
-	// can only flag it, not fail it.
+		`tcp endpoint socket URI: "the scheme, host, and port components are mandatory, and no other component may be set"`}
+	// §3 is a MUST NOT: TCP "MUST NOT be used unless the underlying network
+	// allows the Workload Endpoint server to strongly authenticate the
+	// workload based on source IP address (e.g., over a localhost or
+	// link-local network), or other strong network-level assertions (e.g.,
+	// via an SDN policy)". A loopback or link-local address satisfies it on
+	// its face; any other address may still be compliant behind a policy no
+	// URI can show. The clause is therefore registered at SHOULD severity so
+	// that such a host warns instead of failing — scc is reporting that it
+	// cannot decide, not that §3 is a recommendation — and the text says so
+	// rather than inventing a SHOULD the spec does not contain.
 	WETCPLocalHost = Clause{"SPIFFE_Workload_Endpoint.md", "§3", SeveritySHOULD,
-		"tcp endpoint host SHOULD be loopback or link-local; any other address relies on network-level authentication scc cannot see"}
+		"tcp transport MUST NOT be used unless the network strongly authenticates workloads by source IP (e.g. localhost, link-local) or other network-level assertions; scc can confirm only loopback and link-local hosts"}
 )
