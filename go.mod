@@ -2,6 +2,8 @@ module github.com/kanywst/spiffe-compliance-checker
 
 go 1.26.0
 
+toolchain go1.26.8
+
 require (
 	charm.land/lipgloss/v2 v2.0.6
 	golang.org/x/term v0.46.0
