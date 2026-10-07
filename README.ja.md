@@ -174,7 +174,7 @@ scc workload-endpoint
 
 チェック内容:
 
-- scheme が `unix` か `tcp` であること。`/tmp/agent.sock` のような素のパスはソケットの場所ではあっても URI ではないので、ここで落ちる。
+- scheme が `unix` か `tcp` であること。`/tmp/agent.sock` のような素のパスはソケットの場所ではあっても URI ではないので、ここで落ちる。生のスペースや非 ASCII バイトも同様。Go の URL パーサは通してしまうが、RFC 3986 では percent-encode が必須。
 - `unix`: authority を持たず、ソケットの絶対パスを持つこと。スラッシュが 1 本足りない `unix://tmp/agent.sock` は定番の typo で、`tmp` が authority 扱いになるのをそのまま報告する。
 - `tcp`: host が IP アドレス (`localhost` のようなホスト名は不可) で、port が TCP ポート番号であること。§4 自身が不正例に挙げる `tcp://127.0.0.1:8000/foo` は、scheme / host / port 以外を持てないので落ちる。
 - `tcp` の host が loopback でも link-local でもなければ WARN。§3 は送信元 IP で workload を強く認証できない限り TCP を禁じているが、SDN ポリシーのような「その他の強いネットワークレベルの保証」も認めていて、それはアドレスからは見えない。だから failure ではなく warning にしている。`0.0.0.0` / `::` はもっと直接的な理由で WARN になる: listener 側のワイルドカードで、クライアントが dial できるアドレスではない。

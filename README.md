@@ -174,7 +174,7 @@ scc workload-endpoint
 
 What it checks:
 
-- The scheme is `unix` or `tcp`. A bare path such as `/tmp/agent.sock` is a socket location but not a URI, and fails here.
+- The scheme is `unix` or `tcp`. A bare path such as `/tmp/agent.sock` is a socket location but not a URI, and fails here. So does a raw space or non-ASCII byte, which RFC 3986 requires percent-encoded even though Go's URL parser lets it through.
 - `unix`: no authority, and an absolute socket path. `unix://tmp/agent.sock` — one slash short — is the classic typo: `tmp` becomes the authority, and the check says so.
 - `tcp`: the host is an IP address (a hostname such as `localhost` is not) and the port is a TCP port number. §4's own counter-example, `tcp://127.0.0.1:8000/foo`, fails because nothing but scheme, host and port may be set.
 - A `tcp` host that is neither loopback nor link-local warns. §3 forbids TCP unless the endpoint can strongly authenticate workloads by source IP, but it also allows "other strong network-level assertions" such as an SDN policy, which no address can show — so this is a warning, not a failure. `0.0.0.0` and `::` warn for a sharper reason: they are a listener's wildcard, not an address a client can dial.

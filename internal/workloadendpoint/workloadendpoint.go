@@ -33,7 +33,15 @@ func Check(r *report.Report, s string) {
 		r.Fail(spec.WEURI, fmt.Sprintf("URI parse error: %v", err))
 		return
 	}
-	r.Pass(spec.WEURI, "")
+	// url.Parse is more lenient than RFC 3986: it lets a space or a raw
+	// non-ASCII byte through ("unix:///run/my agent.sock"), so a successful
+	// parse alone does not show the value is a URI. Such a value still has
+	// components worth checking, so this is a soft failure.
+	if i, c, ok := firstNonURIByte(s); ok {
+		r.Fail(spec.WEURI, fmt.Sprintf("byte %q at offset %d must be percent-encoded", c, i))
+	} else {
+		r.Pass(spec.WEURI, "")
+	}
 
 	// RFC 3986 makes the scheme case-insensitive; url.Parse already lowercases
 	// u.Scheme, so "UNIX" lands here as "unix".
@@ -106,11 +114,12 @@ func checkTCP(r *report.Report, s string, u *url.URL) {
 	case a.IsLoopback() || a.IsLinkLocalUnicast():
 		r.Pass(spec.WETCPLocalHost, addr.String())
 	case a.IsUnspecified():
-		// 0.0.0.0 and :: are IP addresses, so §4's host clause holds, but
-		// they name "every interface" for a listener, not a place a client
-		// can dial — which also makes them the likeliest server-side value to
-		// leak into a client's environment.
-		r.Fail(spec.WETCPLocalHost, fmt.Sprintf("host=%q is the unspecified address, a listen-side wildcard rather than an endpoint to dial", addr.String()))
+		// 0.0.0.0 and :: fail §3's test like any other non-local host. The
+		// note after it is scc's own observation, not a §3 finding: they name
+		// "every interface" for a listener, not a place a client can dial,
+		// which makes them the likeliest server-side value to leak into a
+		// client's environment.
+		r.Fail(spec.WETCPLocalHost, fmt.Sprintf("host=%q is neither loopback nor link-local (scc note: the unspecified address is a listener wildcard, not an address a client dials)", addr.String()))
 	default:
 		r.Fail(spec.WETCPLocalHost, fmt.Sprintf("host=%q is neither loopback nor link-local", addr.String()))
 	}
@@ -171,6 +180,23 @@ func checkTCPPort(r *report.Report, u *url.URL) {
 		return
 	}
 	r.Pass(spec.WETCPPort, port)
+}
+
+// firstNonURIByte returns the first byte of s that RFC 3986 §2 does not allow
+// to appear unencoded: anything outside unreserved, gen-delims, sub-delims and
+// "%". Whether a "%" starts a valid escape is left to url.Parse, which already
+// rejects a malformed one.
+func firstNonURIByte(s string) (int, byte, bool) {
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case 'a' <= c && c <= 'z', 'A' <= c && c <= 'Z', '0' <= c && c <= '9':
+		case strings.IndexByte("-._~:/?#[]@!$&'()*+,;=%", c) >= 0:
+		default:
+			return i, c, true
+		}
+	}
+	return 0, 0, false
 }
 
 // queryFragment reports which of query and fragment s carries. It reads the

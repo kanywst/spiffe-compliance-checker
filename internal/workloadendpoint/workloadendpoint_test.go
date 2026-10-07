@@ -167,6 +167,24 @@ func TestCheck(t *testing.T) {
 			wantContainAny: []string{"URI parse error", "!MUST set the host to an IP address"},
 		},
 		{
+			// url.Parse accepts both; RFC 3986 requires them percent-encoded.
+			name:           "unix unencoded space rejected",
+			in:             "unix:///run/my agent.sock",
+			wantFailed:     true,
+			wantContainAny: []string{`byte ' ' at offset 14 must be percent-encoded`, "/run/my agent.sock"},
+		},
+		{
+			name:           "unix raw non-ASCII byte rejected",
+			in:             "unix:///run/\u00e9.sock",
+			wantFailed:     true,
+			wantContainAny: []string{"at offset 12 must be percent-encoded"},
+		},
+		{
+			name:       "unix percent-encoded space accepted",
+			in:         "unix:///run/my%20agent.sock",
+			wantFailed: false,
+		},
+		{
 			// A listen-side wildcard leaking into a client's environment.
 			name:           "tcp unspecified address warns",
 			in:             "tcp://0.0.0.0:8000",
