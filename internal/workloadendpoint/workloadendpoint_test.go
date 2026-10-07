@@ -158,13 +158,14 @@ func TestCheck(t *testing.T) {
 			wantContainAny: []string{"RFC 3986 URI", "URI parse error", `!scheme MUST be set to either "unix" or "tcp"`},
 		},
 		{
-			// Brackets are for IPv6 / IPvFuture only (RFC 3986 §3.2.2);
-			// url.Parse rejects a bracketed IPv4 address on every Go release
-			// this module supports, so it can never reach a host PASS.
+			// Brackets are for IPv6 / IPvFuture only (RFC 3986 §3.2.2).
+			// url.Parse rejects this today and the checker rejects it on its
+			// own otherwise, so only the shared outcome is asserted: it fails
+			// and never reaches the §3 judgement.
 			name:           "tcp bracketed IPv4 rejected",
 			in:             "tcp://[127.0.0.1]:8000",
 			wantFailed:     true,
-			wantContainAny: []string{"URI parse error", "!MUST be set to an IP address"},
+			wantContainAny: []string{"!localhost or link-local"},
 		},
 		{
 			// url.Parse accepts both; RFC 3986 requires them percent-encoded.

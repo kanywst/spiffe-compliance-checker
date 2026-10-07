@@ -152,6 +152,14 @@ func checkTCPHost(r *report.Report, u *url.URL) (netip.Addr, bool) {
 	// RFC 3986's IP-literal has no zone; zones in URIs come from RFC 6874,
 	// which §4 does not cite. go-spiffe's net.ParseIP rejects them too, so a
 	// zoned address is one the reference client will not dial.
+	// The converse: brackets are only for IPv6 (and IPvFuture) literals.
+	// url.Parse rejects "[127.0.0.1]" today, but the bare-IPv6 case above
+	// shows its strictness differs between Go releases, so this does not
+	// lean on it.
+	if !addr.Is6() && strings.HasPrefix(u.Host, "[") {
+		r.Fail(spec.WETCPHostIP, fmt.Sprintf("host=%q is an IPv4 address in [ ], which RFC 3986 reserves for IPv6", host))
+		return netip.Addr{}, false
+	}
 	if addr.Zone() != "" {
 		r.Fail(spec.WETCPHostIP, fmt.Sprintf("host=%q carries an IPv6 zone, which an RFC 3986 IP-literal cannot", host))
 		return netip.Addr{}, false
