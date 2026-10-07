@@ -67,12 +67,9 @@ jobs:
           fi
 
       - name: govulncheck
-        uses: golang/govulncheck-action@v1
-        with:
-          # The action defaults go-version-input to "stable", and setup-go
-          # ignores go-version-file whenever go-version is set, so without
-          # this blank the scan ran on the latest Go instead of the toolchain
-          # the release is built with — and never saw its stdlib.
-          go-version-input: ""
-          go-version-file: go.mod
-          go-package: ./...
+        # Run on the Go this job already set up from go.mod's toolchain line —
+        # the one the release is built with. golang/govulncheck-action was
+        # dropped because its bundled setup-go ignores the toolchain
+        # directive and defaults to "stable", so it scanned a stdlib the
+        # release never ships.
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
