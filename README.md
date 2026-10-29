@@ -8,7 +8,7 @@
 
 ![demo](./assets/demo.gif)
 
-A static compliance checker for [SPIFFE](https://spiffe.io) artifacts. Pass `scc` a SPIFFE ID, an X.509-SVID certificate, a JWT-SVID or WIT-SVID token, a trust bundle, a bundle map, a bundle endpoint configuration, a Workload Endpoint socket address, or a credential folder written for filesystem delivery, and it tells you which MUST / MUST NOT clauses from the [SPIFFE spec](https://github.com/spiffe/spiffe/tree/main/standards) the artifact satisfies or violates. Every output line cites the source document and section so a failed check reads as a spec walkthrough.
+A static compliance checker for [SPIFFE](https://spiffe.io) artifacts. Pass `scc` a SPIFFE ID, an X.509-SVID certificate, a JWT-SVID or WIT-SVID token, a trust bundle, a bundle map, a bundle endpoint configuration, a Workload Endpoint or Broker Endpoint socket address, or a credential folder written for filesystem delivery, and it tells you which MUST / MUST NOT clauses from the [SPIFFE spec](https://github.com/spiffe/spiffe/tree/main/standards) the artifact satisfies or violates. Every output line cites the source document and section so a failed check reads as a spec walkthrough.
 
 SPIFFE is the CNCF spec set that defines `spiffe://...` workload identities and the SVIDs that carry them. It backs SPIRE, Istio's mTLS layer, Cilium's mutual auth, and many in-house implementations. The spec lives across twelve markdown files in [spiffe/spiffe](https://github.com/spiffe/spiffe) and ships without an official conformance suite. `scc` covers the slice of compliance that is checkable from outside: the shape of the artifacts themselves. Runtime concerns (workload attestation, key rotation, Workload API endpoint behaviour, signature verification against a specific bundle) are out of scope.
 
@@ -56,6 +56,7 @@ scc bundle-map [--format text|json|sarif] <bundle-map.json>
 scc federation [--format text|json|sarif] --url <url> --profile <profile> --trust-domain <name>
                [--endpoint-spiffe-id <id>] [--endpoint-bundle <bundle.json>]
 scc workload-endpoint [--format text|json|sarif] [<socket-uri>]
+scc broker-endpoint   [--format text|json|sarif] [<socket-uri>]
 scc credential-folder [--format text|json|sarif] <dir>
 ```
 
@@ -111,6 +112,7 @@ $ echo $?
 | `SPIFFE_Trust_Domain_and_Bundle.md` §5 | bundle map: `trust_domains` presence, trust domain name validity and uniqueness, each embedded bundle, omitted `spiffe_refresh_hint` |
 | `SPIFFE_Federation.md` §5             | bundle endpoint configuration: the three required parameters, profile type, endpoint URL scheme and userinfo, per-profile parameters, bootstrap bundle |
 | `SPIFFE_Workload_Endpoint.md` §4      | `SPIFFE_ENDPOINT_SOCKET`: `unix` / `tcp` scheme, no authority and an absolute path for `unix`, IP host and port for `tcp`, no other components |
+| `SPIFFE_Broker_Endpoint.md` §4        | `SPIFFE_BROKER_SOCKET`: the Workload Endpoint rules, with an IP address or DNS name for the `tcp` host and no locality warning |
 | `SPIFFE_Filesystem_Delivery.md` §2   | credential folder: required file names, PEM block types / order / headers / inter-block data, PKCS#8 key matching the leaf, no trust anchor in the chain, trust bundle per trust domain, empty-file redaction |
 
 The MUST clauses are pulled directly from the `spiffe/spiffe` main branch at commit [`03e916d`](https://github.com/spiffe/spiffe/commit/03e916d) (2026-10-29).
@@ -121,7 +123,7 @@ The [WIT-SVID](https://github.com/spiffe/spiffe/blob/main/standards/WIT-SVID.md)
 
 `scc` checks the token's shape only. The proof of possession that a WIT-SVID must always be presented with is a runtime concern and stays out of scope, as does signature verification.
 
-`WIT-SVID.md` is marked **Stability: Incubating** in `spiffe/spiffe`, meaning breaking changes are avoided but may still be made in response to implementation experience. `SPIFFE_Filesystem_Delivery.md` is Incubating too; the other specs above are marked Stable. Expect the clauses of those two specs to move more than the rest.
+`WIT-SVID.md` is marked **Stability: Incubating** in `spiffe/spiffe`, meaning breaking changes are avoided but may still be made in response to implementation experience. `SPIFFE_Filesystem_Delivery.md` and `SPIFFE_Broker_Endpoint.md` are Incubating too; the other specs above are marked Stable. Expect the clauses of those three specs to move more than the rest.
 
 A trust bundle publishes WIT signing keys as JWK entries with `use` set to `wit-svid` (`WIT-SVID.md` §6.1), so `scc bundle` accepts that value alongside `x509-svid` and `jwt-svid`, requires a `kid` on each such entry, and checks that no two keyed entries share a `kid`.
 
@@ -180,6 +182,22 @@ What it checks:
 - `unix`: no authority, and an absolute socket path. `unix://tmp/agent.sock` — one slash short — is the classic typo: `tmp` becomes the authority, and the check says so.
 - `tcp`: the host is an IP address (a hostname such as `localhost` is not) and the port is a TCP port number. §4's own counter-example, `tcp://127.0.0.1:8000/foo`, fails because nothing but scheme, host and port may be set.
 - A `tcp` host that is neither loopback nor link-local warns. §3 forbids TCP unless the endpoint can strongly authenticate workloads by source IP, but it also allows "other strong network-level assertions" such as an SDN policy, which no address can show — so this is a warning, not a failure. `0.0.0.0` and `::` warn for a sharper reason: they are a listener's wildcard, not an address a client can dial.
+
+### Broker Endpoint
+
+The [SPIFFE Broker Endpoint](https://github.com/spiffe/spiffe/blob/main/standards/SPIFFE_Broker_Endpoint.md) is where a *broker* fetches SVIDs: a component that acts on behalf of several workloads, such as a per-node proxy that replaced the per-workload sidecar. Like the Workload Endpoint, the spec is almost entirely runtime (gRPC, the `broker.spiffe.io` metadata header, mutual TLS, authorization), and all of that stays out of scope. Its §4 restates the Workload Endpoint's address rules for `SPIFFE_BROKER_SOCKET`, and `scc broker-endpoint` checks that value the same way, including the fallback to the environment variable with no argument.
+
+```bash
+scc broker-endpoint 'tcp://broker.example.com:8443'
+scc broker-endpoint   # reads SPIFFE_BROKER_SOCKET
+```
+
+Two things differ from `scc workload-endpoint`, both because the broker may be served over the network and is mutually authenticated:
+
+- A `tcp` host may be a DNS name as well as an IP address. A name must be an RFC 1123 host name; a last label that is all digits, such as `999.0.0.1`, is treated as a mistyped IPv4 address and fails.
+- A routable host does not warn. The Workload Endpoint's §3 limit on TCP has no broker counterpart.
+
+`SPIFFE_Broker_Endpoint.md` is marked **Stability: Incubating**.
 
 ### Filesystem Delivery
 

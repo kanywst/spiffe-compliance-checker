@@ -8,7 +8,7 @@
 
 ![demo](./assets/demo.gif)
 
-[SPIFFE](https://spiffe.io) の artifact を静的に検証する CLI。SPIFFE ID 文字列、X.509-SVID 証明書、JWT-SVID / WIT-SVID トークン、Trust Bundle、Bundle Map、Bundle Endpoint 設定、Workload Endpoint のソケットアドレス、filesystem delivery 用の credential folder のいずれかを `scc` に渡すと、[SPIFFE 仕様](https://github.com/spiffe/spiffe/tree/main/standards) の MUST / MUST NOT 句のうち何が満たされていて何が違反しているかを 1 行ずつ報告する。各行には仕様書名とセクション番号が付くので、落ちた assertion からそのまま仕様本文に飛んで根拠を確認できる。
+[SPIFFE](https://spiffe.io) の artifact を静的に検証する CLI。SPIFFE ID 文字列、X.509-SVID 証明書、JWT-SVID / WIT-SVID トークン、Trust Bundle、Bundle Map、Bundle Endpoint 設定、Workload Endpoint / Broker Endpoint のソケットアドレス、filesystem delivery 用の credential folder のいずれかを `scc` に渡すと、[SPIFFE 仕様](https://github.com/spiffe/spiffe/tree/main/standards) の MUST / MUST NOT 句のうち何が満たされていて何が違反しているかを 1 行ずつ報告する。各行には仕様書名とセクション番号が付くので、落ちた assertion からそのまま仕様本文に飛んで根拠を確認できる。
 
 SPIFFE は CNCF の仕様セットで、`spiffe://...` 形式の workload identity とそれを運ぶ SVID を定義している。SPIRE、Istio の mTLS、Cilium の mutual auth、社内製の実装などが SPIFFE 準拠を名乗っている。仕様は [spiffe/spiffe](https://github.com/spiffe/spiffe) の 12 本の markdown に分散しているが、公式の conformance suite は存在しない。`scc` はその空白のうち「外から artifact だけ見て検証できる範囲」をカバーする。Workload attestation、鍵ローテーション、Workload API endpoint の振る舞い、特定 bundle に対する署名検証などの動的な側面はスコープ外。
 
@@ -56,6 +56,7 @@ scc bundle-map [--format text|json|sarif] <bundle-map.json>
 scc federation [--format text|json|sarif] --url <url> --profile <profile> --trust-domain <name>
                [--endpoint-spiffe-id <id>] [--endpoint-bundle <bundle.json>]
 scc workload-endpoint [--format text|json|sarif] [<socket-uri>]
+scc broker-endpoint   [--format text|json|sarif] [<socket-uri>]
 scc credential-folder [--format text|json|sarif] <dir>
 ```
 
@@ -111,6 +112,7 @@ $ echo $?
 | `SPIFFE_Trust_Domain_and_Bundle.md` §5 | bundle map: `trust_domains` の存在、trust domain 名の妥当性と一意性、内包する各 bundle、`spiffe_refresh_hint` の省略 |
 | `SPIFFE_Federation.md` §5             | bundle endpoint 設定: 必須 3 パラメータ、profile 種別、endpoint URL の scheme と userinfo、profile 固有パラメータ、bootstrap bundle |
 | `SPIFFE_Workload_Endpoint.md` §4      | `SPIFFE_ENDPOINT_SOCKET`: `unix` / `tcp` scheme、`unix` は authority なし + 絶対パス、`tcp` は IP の host と port、それ以外の component なし |
+| `SPIFFE_Broker_Endpoint.md` §4        | `SPIFFE_BROKER_SOCKET`: Workload Endpoint と同じ規則。ただし `tcp` の host は IP アドレスか DNS 名で、locality の WARN なし |
 | `SPIFFE_Filesystem_Delivery.md` §2   | credential folder: 必須のファイル名、PEM ブロックの種別 / 順序 / ヘッダ / ブロック間データ、leaf と対応する PKCS#8 鍵、chain に trust anchor を含めない、trust domain ごとの trust bundle、空ファイルによる redaction |
 
 MUST 句は `spiffe/spiffe` main ブランチの commit [`03e916d`](https://github.com/spiffe/spiffe/commit/03e916d) (2026-10-29) を出典としている。
@@ -121,7 +123,7 @@ MUST 句は `spiffe/spiffe` main ブランチの commit [`03e916d`](https://gith
 
 `scc` が見るのはトークンの形だけ。WIT-SVID の提示時に必ず伴う proof of possession は runtime の話なのでスコープ外、署名検証も同様。
 
-`WIT-SVID.md` は `spiffe/spiffe` 上で **Stability: Incubating** に分類されている。破壊的変更は避けられるが、実装からのフィードバック次第では入りうる、という段階。`SPIFFE_Filesystem_Delivery.md` も Incubating で、それ以外は Stable。つまりこの 2 本の句は今後動く可能性が他より高い。
+`WIT-SVID.md` は `spiffe/spiffe` 上で **Stability: Incubating** に分類されている。破壊的変更は避けられるが、実装からのフィードバック次第では入りうる、という段階。`SPIFFE_Filesystem_Delivery.md` と `SPIFFE_Broker_Endpoint.md` も Incubating で、それ以外は Stable。つまりこの 3 本の句は今後動く可能性が他より高い。
 
 trust bundle 側では WIT の署名鍵が `use` を `wit-svid` にした JWK entry として公開される (`WIT-SVID.md` §6.1)。`scc bundle` は `x509-svid` / `jwt-svid` に加えてこの値を受理し、該当 entry に `kid` を要求し、鍵付き entry 間で `kid` が衝突していないかを検査する。
 
@@ -180,6 +182,22 @@ scc workload-endpoint
 - `unix`: authority を持たず、ソケットの絶対パスを持つこと。スラッシュが 1 本足りない `unix://tmp/agent.sock` は定番の typo で、`tmp` が authority 扱いになるのをそのまま報告する。
 - `tcp`: host が IP アドレス (`localhost` のようなホスト名は不可) で、port が TCP ポート番号であること。§4 自身が不正例に挙げる `tcp://127.0.0.1:8000/foo` は、scheme / host / port 以外を持てないので落ちる。
 - `tcp` の host が loopback でも link-local でもなければ WARN。§3 は送信元 IP で workload を強く認証できない限り TCP を禁じているが、SDN ポリシーのような「その他の強いネットワークレベルの保証」も認めていて、それはアドレスからは見えない。だから failure ではなく warning にしている。`0.0.0.0` / `::` はもっと直接的な理由で WARN になる: listener 側のワイルドカードで、クライアントが dial できるアドレスではない。
+
+### Broker Endpoint について
+
+[SPIFFE Broker Endpoint](https://github.com/spiffe/spiffe/blob/main/standards/SPIFFE_Broker_Endpoint.md) は *broker* が SVID を取りに行く先。broker は複数の workload に代わって動くコンポーネントで、workload ごとの sidecar を置き換えたノード単位の proxy などがこれに当たる。Workload Endpoint と同じく仕様のほぼ全部は runtime の話 (gRPC、`broker.spiffe.io` メタデータヘッダ、mutual TLS、認可) でスコープ外。§4 が Workload Endpoint のアドレス規則を `SPIFFE_BROKER_SOCKET` 向けに言い直していて、`scc broker-endpoint` はその値を同じやり方で検査する。引数なしなら環境変数にフォールバックするのも同じ。
+
+```bash
+scc broker-endpoint 'tcp://broker.example.com:8443'
+scc broker-endpoint   # SPIFFE_BROKER_SOCKET を読む
+```
+
+`scc workload-endpoint` との違いは 2 つで、どちらも broker がネットワーク越しに提供されてよく、相互認証されることから来ている:
+
+- `tcp` の host には IP アドレスに加えて DNS 名も使える。名前は RFC 1123 のホスト名であること。`999.0.0.1` のように最後のラベルが数字だけのものは IPv4 アドレスの打ち間違いとみなして FAIL にする。
+- ルーティング可能な host でも WARN にしない。Workload Endpoint の §3 にある TCP の制限は broker 側には無い。
+
+`SPIFFE_Broker_Endpoint.md` は **Stability: Incubating**。
 
 ### Filesystem Delivery について
 

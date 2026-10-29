@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/kanywst/spiffe-compliance-checker/internal/brokerendpoint"
 	"github.com/kanywst/spiffe-compliance-checker/internal/bundle"
 	"github.com/kanywst/spiffe-compliance-checker/internal/bundlemap"
 	"github.com/kanywst/spiffe-compliance-checker/internal/credentialfolder"
@@ -43,6 +44,7 @@ Usage:
                  --trust-domain <name> [--endpoint-spiffe-id <id>]
                  [--endpoint-bundle <bundle.json>]
   scc workload-endpoint [--format text|json|sarif] [<socket-uri>]
+  scc broker-endpoint   [--format text|json|sarif] [<socket-uri>]
   scc credential-folder [--format text|json|sarif] <dir>
 
 Each subcommand prints one line per checked clause. Exit code is 1 if any
@@ -57,16 +59,17 @@ are the additions the https_spiffe profile defines.
 scc workload-endpoint checks a SPIFFE_ENDPOINT_SOCKET value
 (SPIFFE_Workload_Endpoint.md §4). With no argument it reads the
 SPIFFE_ENDPOINT_SOCKET environment variable, the same fallback §4 requires of
-conforming clients.
+conforming clients. scc broker-endpoint does the same for SPIFFE_BROKER_SOCKET
+(SPIFFE_Broker_Endpoint.md §4), whose tcp host may also be a DNS name.
 
 scc credential-folder checks a directory written per
 SPIFFE_Filesystem_Delivery.md §2: the credential bundle
 (credential-bundle.private-key.x509.pem) and every
 <trust-domain>.spiffe-trust-bundle.x509.pem trust bundle in it.
 
-WIT-SVID.md and SPIFFE_Filesystem_Delivery.md are marked Incubating in
-spiffe/spiffe, so their clauses may still change; the other specs scc checks
-are Stable.
+WIT-SVID.md, SPIFFE_Filesystem_Delivery.md and SPIFFE_Broker_Endpoint.md are
+marked Incubating in spiffe/spiffe, so their clauses may still change; the
+other specs scc checks are Stable.
 
 --format selects the output: text (default, human-readable), json (a stable
 object for automation), or sarif (SARIF 2.1.0 for GitHub Code Scanning). The
@@ -106,7 +109,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	case "federation":
 		return runFederation(rest, stdout, stderr)
 	case "workload-endpoint":
-		return runWorkloadEndpoint(rest, stdout, stderr)
+		return runSocket("workload-endpoint", workloadendpoint.EnvVar, workloadendpoint.Check, rest, stdout, stderr)
+	case "broker-endpoint":
+		return runSocket("broker-endpoint", brokerendpoint.EnvVar, brokerendpoint.Check, rest, stdout, stderr)
 	case "credential-folder":
 		return runCredentialFolder(rest, stdout, stderr)
 	default:
@@ -285,13 +290,14 @@ func runFederation(args []string, stdout, stderr io.Writer) int {
 	return emit(rep, *format, stdout, stderr)
 }
 
-// runWorkloadEndpoint falls back to SPIFFE_ENDPOINT_SOCKET when no argument is
-// given, mirroring §4's rule for clients that are not explicitly configured,
-// so `scc workload-endpoint` inside a workload checks the address it would
-// actually dial. A variable that is set but empty is still checked: an empty
-// value is a misconfiguration, not an absence.
-func runWorkloadEndpoint(args []string, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("workload-endpoint", flag.ContinueOnError)
+// runSocket backs both endpoint subcommands. With no argument it falls back to
+// the spec's environment variable (SPIFFE_ENDPOINT_SOCKET or
+// SPIFFE_BROKER_SOCKET), mirroring each §4's rule for clients that are not
+// explicitly configured, so running it inside a workload or broker checks the
+// address it would actually dial. A variable that is set but empty is still
+// checked: an empty value is a misconfiguration, not an absence.
+func runSocket(name, envVar string, check func(*report.Report, string), args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	format := addFormatFlag(fs)
 	if err := fs.Parse(args); err != nil {
@@ -300,20 +306,20 @@ func runWorkloadEndpoint(args []string, stdout, stderr io.Writer) int {
 	var value string
 	switch fs.NArg() {
 	case 0:
-		v, ok := os.LookupEnv(workloadendpoint.EnvVar)
+		v, ok := os.LookupEnv(envVar)
 		if !ok {
-			fmt.Fprintf(stderr, "scc workload-endpoint: no socket URI given and %s is not set\n", workloadendpoint.EnvVar)
+			fmt.Fprintf(stderr, "scc %s: no socket URI given and %s is not set\n", name, envVar)
 			return 2
 		}
 		value = v
 	case 1:
 		value = fs.Arg(0)
 	default:
-		fmt.Fprintln(stderr, "scc workload-endpoint: expected at most one socket URI")
+		fmt.Fprintf(stderr, "scc %s: expected at most one socket URI\n", name)
 		return 2
 	}
-	rep := &report.Report{Subject: "scc workload-endpoint  " + value}
-	workloadendpoint.Check(rep, value)
+	rep := &report.Report{Subject: "scc " + name + "  " + value}
+	check(rep, value)
 	return emit(rep, *format, stdout, stderr)
 }
 

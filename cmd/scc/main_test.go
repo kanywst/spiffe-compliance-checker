@@ -110,7 +110,7 @@ func TestUsageListsEverySubcommand(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("--help exit = %d, want 0", code)
 	}
-	for _, sub := range []string{"id", "x509-svid", "jwt-svid", "wit-svid", "bundle", "bundle-map", "federation", "workload-endpoint", "credential-folder"} {
+	for _, sub := range []string{"id", "x509-svid", "jwt-svid", "wit-svid", "bundle", "bundle-map", "federation", "workload-endpoint", "broker-endpoint", "credential-folder"} {
 		if !strings.Contains(stdout, "scc "+sub) {
 			t.Errorf("usage does not mention subcommand %q\n%s", sub, stdout)
 		}
@@ -328,5 +328,43 @@ func TestRunCredentialFolderUsageErrors(t *testing.T) {
 	}
 	if code, _, stderr := runCapture("credential-folder", filepath.Join(t.TempDir(), "absent")); code != 2 {
 		t.Errorf("missing dir exit = %d, want 2 (stderr: %q)", code, stderr)
+	}
+}
+
+func TestRunBrokerEndpointExitCodes(t *testing.T) {
+	if code, out, _ := runCapture("broker-endpoint", "tcp://broker.example.com:8443"); code != 0 {
+		t.Errorf("DNS host exit = %d, want 0\n%s", code, out)
+	}
+	// The same value is a failure for the Workload Endpoint, whose host must
+	// be an IP address.
+	if code, out, _ := runCapture("workload-endpoint", "tcp://broker.example.com:8443"); code != 1 {
+		t.Errorf("workload-endpoint DNS host exit = %d, want 1\n%s", code, out)
+	}
+	if code, out, _ := runCapture("broker-endpoint", "tcp://127.0.0.1:8000/foo"); code != 1 {
+		t.Errorf("path exit = %d, want 1\n%s", code, out)
+	}
+}
+
+func TestRunBrokerEndpointEnvFallback(t *testing.T) {
+	t.Setenv("SPIFFE_BROKER_SOCKET", "unix:///run/broker.sock")
+	t.Setenv("SPIFFE_ENDPOINT_SOCKET", "not a uri")
+	code, out, _ := runCapture("broker-endpoint")
+	if code != 0 || !strings.Contains(out, "/run/broker.sock") {
+		t.Errorf("env fallback exit = %d, want 0 reading SPIFFE_BROKER_SOCKET\n%s", code, out)
+	}
+}
+
+func TestRunBrokerEndpointUsageErrors(t *testing.T) {
+	if code, _, stderr := runCapture("broker-endpoint", "unix:///a", "unix:///b"); code != 2 {
+		t.Errorf("two-arg exit = %d, want 2 (stderr: %q)", code, stderr)
+	}
+	// t.Setenv registers the restore; Unsetenv then makes the variable absent.
+	t.Setenv("SPIFFE_BROKER_SOCKET", "")
+	if err := os.Unsetenv("SPIFFE_BROKER_SOCKET"); err != nil {
+		t.Fatal(err)
+	}
+	code, _, stderr := runCapture("broker-endpoint")
+	if code != 2 || !strings.Contains(stderr, "SPIFFE_BROKER_SOCKET is not set") {
+		t.Errorf("unset env exit = %d, want 2 (stderr: %q)", code, stderr)
 	}
 }
