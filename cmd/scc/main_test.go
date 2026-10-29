@@ -110,7 +110,7 @@ func TestUsageListsEverySubcommand(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("--help exit = %d, want 0", code)
 	}
-	for _, sub := range []string{"id", "x509-svid", "jwt-svid", "wit-svid", "bundle", "bundle-map", "federation", "workload-endpoint"} {
+	for _, sub := range []string{"id", "x509-svid", "jwt-svid", "wit-svid", "bundle", "bundle-map", "federation", "workload-endpoint", "credential-folder"} {
 		if !strings.Contains(stdout, "scc "+sub) {
 			t.Errorf("usage does not mention subcommand %q\n%s", sub, stdout)
 		}
@@ -298,5 +298,35 @@ func TestRunBadFormat(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "unknown format") {
 		t.Errorf("stderr = %q, want it to mention unknown format", stderr)
+	}
+}
+
+func TestRunCredentialFolderExitCodes(t *testing.T) {
+	// A folder with no credential bundle and no trust bundle is the one
+	// failing shape that needs no certificate fixtures.
+	dir := t.TempDir()
+	if code, out, _ := runCapture("credential-folder", dir); code != 1 {
+		t.Errorf("empty folder exit = %d, want 1\n%s", code, out)
+	}
+	// Both files present but empty: §2.3 redactions, so nothing fails.
+	for _, name := range []string{"credential-bundle.private-key.x509.pem", "example.org.spiffe-trust-bundle.x509.pem"} {
+		if err := os.WriteFile(filepath.Join(dir, name), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if code, out, _ := runCapture("credential-folder", dir); code != 0 {
+		t.Errorf("redacted folder exit = %d, want 0\n%s", code, out)
+	}
+}
+
+func TestRunCredentialFolderUsageErrors(t *testing.T) {
+	if code, _, stderr := runCapture("credential-folder"); code != 2 {
+		t.Errorf("no-arg exit = %d, want 2 (stderr: %q)", code, stderr)
+	}
+	if code, _, _ := runCapture("credential-folder", "a", "b"); code != 2 {
+		t.Errorf("two-arg exit = %d, want 2", code)
+	}
+	if code, _, stderr := runCapture("credential-folder", filepath.Join(t.TempDir(), "absent")); code != 2 {
+		t.Errorf("missing dir exit = %d, want 2 (stderr: %q)", code, stderr)
 	}
 }
