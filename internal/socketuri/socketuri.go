@@ -1,10 +1,11 @@
 // Package socketuri checks an endpoint socket address — an RFC 3986 URI with a
 // "unix" or "tcp" scheme — against a set of clauses supplied by the caller.
 //
-// SPIFFE_Workload_Endpoint.md §4 fixes this shape, and other endpoint specs
-// reuse it. Each spec's package owns its clauses and hands them in as a
-// Clauses value, so every assertion still cites the spec it came from. Like
-// jose, this package knows the shape but no spec.
+// SPIFFE_Workload_Endpoint.md §4 and SPIFFE_Broker_Endpoint.md §4 define the
+// same shape almost word for word, and differ only in what a tcp host may be
+// and in whether a non-local host is restricted. Each spec's package owns its
+// clauses and hands them in as a Clauses value, so every assertion still cites
+// the spec it came from. Like jose, this package knows the shape but no spec.
 package socketuri
 
 import (
@@ -31,6 +32,8 @@ type Clauses struct {
 	// TCPLocalHost, when set, is checked against an IP host: the Workload
 	// Endpoint's §3 limits TCP to networks that authenticate by source IP.
 	TCPLocalHost *spec.Clause
+	// AllowDNSName lets a tcp host be a DNS name as well as an IP address.
+	AllowDNSName bool
 }
 
 // Check evaluates s against c and appends the assertions to r.
@@ -133,6 +136,9 @@ func checkTCP(r *report.Report, s string, u *url.URL, c Clauses) {
 	}
 }
 
+// checkTCPHost returns the host's address when it is an IP address; a DNS
+// name, where allowed, passes but returns false, since it has no address to
+// judge locality by.
 func checkTCPHost(r *report.Report, u *url.URL, c Clauses) (netip.Addr, bool) {
 	if u.Opaque != "" {
 		// "tcp:127.0.0.1:8000" has no "//", so it carries no authority at all.
@@ -146,7 +152,18 @@ func checkTCPHost(r *report.Report, u *url.URL, c Clauses) (netip.Addr, bool) {
 	}
 	addr, err := netip.ParseAddr(host)
 	if err != nil {
-		r.Fail(c.TCPHost, fmt.Sprintf("host=%q is not an IP address", host))
+		switch {
+		case !c.AllowDNSName:
+			r.Fail(c.TCPHost, fmt.Sprintf("host=%q is not an IP address", host))
+		case strings.HasPrefix(u.Host, "[") || strings.Contains(u.Host, "%") || !isDNSName(host):
+			// url.Parse rejects a percent-encoded host today, but its
+			// strictness differs between Go releases (see the bare-IPv6
+			// case below), and it would unescape one it accepted, so the
+			// raw authority is checked rather than leaning on it.
+			r.Fail(c.TCPHost, fmt.Sprintf("host=%q is neither an IP address nor a DNS name", host))
+		default:
+			r.Pass(c.TCPHost, host)
+		}
 		return netip.Addr{}, false
 	}
 	// url.Parse accepts a bare IPv6 address in the authority and splits it at
@@ -202,6 +219,29 @@ func checkTCPPort(r *report.Report, u *url.URL, c Clauses) {
 		return
 	}
 	r.Pass(c.TCPPort, port)
+}
+
+// isDNSName reports whether host is a DNS host name in the RFC 1123 sense:
+// dot-separated labels of letters, digits and hyphens, 1-63 bytes each, not
+// starting or ending with a hyphen, at most 253 bytes in all. One trailing dot
+// (a fully qualified name) is accepted. An all-numeric last label is refused,
+// as RFC 3696 §2 does for top-level domains: "999.0.0.1" is a mistyped IPv4
+// address, not a name.
+func isDNSName(host string) bool {
+	host = strings.TrimSuffix(host, ".")
+	if host == "" || len(host) > 253 {
+		return false
+	}
+	labels := strings.Split(host, ".")
+	for _, l := range labels {
+		if l == "" || len(l) > 63 || l[0] == '-' || l[len(l)-1] == '-' {
+			return false
+		}
+		if strings.Trim(l, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-") != "" {
+			return false
+		}
+	}
+	return strings.Trim(labels[len(labels)-1], "0123456789") != ""
 }
 
 // firstNonURIByte returns the first byte of s that RFC 3986 §2 does not allow

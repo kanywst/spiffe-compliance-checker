@@ -373,3 +373,33 @@ var (
 	FSDOwnTrustBundle = Clause{"SPIFFE_Filesystem_Delivery.md", "§2.2", SeverityMUST,
 		`the credential folder contains a trust bundle "for the workload's own trust domain"`}
 )
+
+// SPIFFE Broker Endpoint clauses (SPIFFE_Broker_Endpoint.md). Marked
+// Stability: Incubating upstream. Like the Workload Endpoint, nearly all of
+// this spec is runtime — gRPC, the broker.spiffe.io metadata header, mutual
+// TLS, authorization, error codes — and stays out of scope. §4 is the static
+// part: the SPIFFE_BROKER_SOCKET value. It restates the Workload Endpoint's
+// §4 almost verbatim, with two differences that follow from the broker being
+// remote-capable and mutually authenticated: a tcp host may be a DNS name,
+// and there is no counterpart to the Workload Endpoint's §3 limit on TCP.
+var (
+	// Declarative in the spec, as in WEURI, and kept at MUST for the same
+	// reason: every MUST after it is phrased in URI components.
+	BEURI = Clause{"SPIFFE_Broker_Endpoint.md", "§4", SeverityMUST,
+		`the value of SPIFFE_BROKER_SOCKET "is structured as an RFC 3986 URI"`}
+	BEScheme = Clause{"SPIFFE_Broker_Endpoint.md", "§4", SeverityMUST,
+		`the scheme MUST be set to either "unix" or "tcp"`}
+	BEUnixNoAuthority = Clause{"SPIFFE_Broker_Endpoint.md", "§4", SeverityMUST,
+		"unix: the authority component MUST NOT be set"}
+	BEUnixAbsolutePath = Clause{"SPIFFE_Broker_Endpoint.md", "§4", SeverityMUST,
+		"unix: the path component MUST be set to the absolute path of the SPIFFE Broker Endpoint Unix Domain Socket"}
+	// Lowercase "may" in the spec, as in WEUnixNoOtherComponents.
+	BEUnixNoOtherComponents = Clause{"SPIFFE_Broker_Endpoint.md", "§4", SeverityMUST,
+		`unix: "the scheme and path components are mandatory, and no other component may be set"`}
+	BETCPHost = Clause{"SPIFFE_Broker_Endpoint.md", "§4", SeverityMUST,
+		"tcp: the host component of the authority MUST be set to an IP address or a DNS name"}
+	BETCPPort = Clause{"SPIFFE_Broker_Endpoint.md", "§4", SeverityMUST,
+		"tcp: the port component of the authority MUST be set to the TCP port number of the SPIFFE Broker Endpoint TCP listen socket"}
+	BETCPNoOtherComponents = Clause{"SPIFFE_Broker_Endpoint.md", "§4", SeverityMUST,
+		`tcp: "the scheme, host, and port components are mandatory, and no other component may be set"`}
+)
