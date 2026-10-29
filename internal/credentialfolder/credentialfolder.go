@@ -16,6 +16,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"slices"
@@ -44,7 +45,13 @@ type trustBundle struct {
 	name        string
 	trustDomain string
 	raw         []byte
+	problem     string // why the file could not be read; raw is nil then
 }
+
+// maxFileSize caps how much of a bundle file is read. A real credential or
+// trust bundle is a few kilobytes; the cap only keeps a hostile folder from
+// exhausting memory.
+const maxFileSize = 1 << 20
 
 // CheckDir runs Check on the credential folder at dir.
 func CheckDir(r *report.Report, dir string) error {
@@ -53,15 +60,17 @@ func CheckDir(r *report.Report, dir string) error {
 
 // Check evaluates the credential folder fsys against SPIFFE_Filesystem_Delivery.md
 // §2 and appends the assertions to r. It returns an error only when the folder
-// or one of the files it defines cannot be read, which leaves nothing to check.
+// itself cannot be listed, which leaves nothing to check.
 //
 // §2 lets a folder hold other files and directories for the provisioning
 // system's own use, so an entry is classified by name before it is touched and
 // anything the spec does not name is never opened — a dangling symlink or an
-// unreadable tracking file must not stop the check. A matching name that is a
-// directory is skipped. Kubernetes projected volumes, the spec's own reference
-// example, keep their payload behind symlinks into a hidden "..data"
-// directory, and fs.Stat follows those links.
+// unreadable tracking file must not stop the check. A spec-named entry that
+// cannot be read is a finding about that file, not a reason to stop: it is
+// reported against its clause and the rest of the folder is still checked.
+// Kubernetes projected volumes, the spec's own reference example, keep their
+// payload behind symlinks into a hidden "..data" directory, and fs.Stat
+// follows those links.
 func Check(r *report.Report, fsys fs.FS) error {
 	entries, err := fs.ReadDir(fsys, ".")
 	if err != nil {
@@ -71,6 +80,7 @@ func Check(r *report.Report, fsys fs.FS) error {
 	var (
 		cred         []byte
 		credFound    bool
+		credProblem  string
 		trust        []trustBundle
 		misnamed     []string
 		credMisnamed []string
@@ -92,28 +102,18 @@ func Check(r *report.Report, fsys fs.FS) error {
 			}
 			continue
 		}
-		info, err := fs.Stat(fsys, name)
-		if err != nil {
-			return err
-		}
-		if info.IsDir() {
-			continue
-		}
-		raw, err := fs.ReadFile(fsys, name)
-		if err != nil {
-			return err
-		}
+		raw, problem := readSpecFile(fsys, name)
 		if isCred {
-			cred, credFound = raw, true
+			cred, credFound, credProblem = raw, true, problem
 			continue
 		}
-		trust = append(trust, trustBundle{name, strings.TrimSuffix(name, TrustBundleSuffix), raw})
+		trust = append(trust, trustBundle{name, strings.TrimSuffix(name, TrustBundleSuffix), raw, problem})
 	}
 
-	checkPresence(r, credFound, len(cred) == 0, credMisnamed, misnamed, trust)
+	checkPresence(r, credFound, len(cred) == 0, credProblem, credMisnamed, misnamed, trust)
 
 	var chain []*x509.Certificate
-	if credFound && len(cred) > 0 {
+	if credFound && credProblem == "" && len(cred) > 0 {
 		chain = checkCredentialBundle(r, cred, anchors(trust))
 	}
 
@@ -127,11 +127,39 @@ func Check(r *report.Report, fsys fs.FS) error {
 	return nil
 }
 
+// readSpecFile reads a spec-named file, or says why it cannot. Only a regular
+// file is opened: opening a FIFO with that name would block forever, and a
+// directory or device is not a PEM file in the first place.
+func readSpecFile(fsys fs.FS, name string) (raw []byte, problem string) {
+	info, err := fs.Stat(fsys, name)
+	if err != nil {
+		return nil, "cannot stat: " + err.Error()
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Sprintf("not a regular file (mode %s)", info.Mode())
+	}
+	f, err := fsys.Open(name)
+	if err != nil {
+		return nil, "cannot open: " + err.Error()
+	}
+	defer func() { _ = f.Close() }()
+	raw, err = io.ReadAll(io.LimitReader(f, maxFileSize+1))
+	if err != nil {
+		return nil, "cannot read: " + err.Error()
+	}
+	if len(raw) > maxFileSize {
+		return nil, fmt.Sprintf("larger than %d bytes", maxFileSize)
+	}
+	return raw, ""
+}
+
 // checkPresence covers §2's two required names. An empty file counts as
 // present: §2.3 defines it as a redaction, and the per-file checks are skipped
 // for it rather than failing on a missing PEM block.
-func checkPresence(r *report.Report, credFound, credEmpty bool, credMisnamed, trustMisnamed []string, trust []trustBundle) {
+func checkPresence(r *report.Report, credFound, credEmpty bool, credProblem string, credMisnamed, trustMisnamed []string, trust []trustBundle) {
 	switch {
+	case credProblem != "":
+		r.Fail(spec.FSDCredentialBundlePresent, CredentialBundleName+": "+credProblem)
 	case !credFound && len(credMisnamed) > 0:
 		r.Fail(spec.FSDCredentialBundlePresent,
 			fmt.Sprintf("%s not found; misnamed candidate(s): %s", CredentialBundleName, strings.Join(credMisnamed, ", ")))
@@ -356,6 +384,10 @@ func checkTrustBundle(r *report.Report, tb trustBundle) {
 	}
 	id.CheckTrustDomain(r, tb.name, tb.trustDomain)
 
+	if tb.problem != "" {
+		r.Fail(spec.FSDTrustBundleCertificates, tb.name+": "+tb.problem)
+		return
+	}
 	if len(tb.raw) == 0 {
 		r.Pass(spec.FSDTrustBundleCertificates, tb.name+": empty, redacted (§2.3)")
 		return
@@ -388,35 +420,39 @@ func checkTrustBundle(r *report.Report, tb trustBundle) {
 
 // checkOwnTrustBundle covers §2.2's bundle "for the workload's own trust
 // domain", taken from the leaf's SPIFFE ID, and then §2.1's rule that the
-// chain stops right below a trust anchor in it. A leaf with no usable SPIFFE
-// ID has already warned under FSDCredentialBundleLeafSVID, so it gets nothing
-// here.
+// chain stops right below a trust anchor. The trust domain is read from the
+// parsed URI's host rather than from a re-serialized string, so it is the one
+// the certificate carries; whether that ID is valid is the leaf SVID check's
+// business. When the own bundle cannot be identified or is missing, the chain
+// is matched against every anchor in the folder instead, so the chain MUST is
+// still evaluated.
 func checkOwnTrustBundle(r *report.Report, chain []*x509.Certificate, trust []trustBundle) {
 	leaf := chain[0]
-	if len(leaf.URIs) != 1 {
+	if len(leaf.URIs) != 1 || !strings.EqualFold(leaf.URIs[0].Scheme, "spiffe") || leaf.URIs[0].Hostname() == "" {
+		// No trust domain to look up. The leaf being an SVID is only a
+		// SHOULD, already warned on, so failing the own-bundle MUST here
+		// would make that SHOULD fatal through the back door.
+		checkChainComplete(r, chain, trust, "this folder")
 		return
 	}
-	td, _, err := id.Parse(leaf.URIs[0].String())
-	if err != nil || td == "" {
-		return
-	}
-	want := td + TrustBundleSuffix
+	want := leaf.URIs[0].Hostname() + TrustBundleSuffix
 	i := slices.IndexFunc(trust, func(tb trustBundle) bool { return tb.name == want })
 	if i < 0 {
 		r.Fail(spec.FSDOwnTrustBundle, want+" not found")
+		checkChainComplete(r, chain, trust, "this folder")
 		return
 	}
 	r.Pass(spec.FSDOwnTrustBundle, want)
-	checkChainComplete(r, chain, trust[i])
+	checkChainComplete(r, chain, trust[i:i+1], want)
 }
 
 // checkChainComplete covers "It MUST stop at the certificate preceding the
-// trust anchor": the last chain certificate must be issued by an anchor in the
-// leaf's own trust bundle. Like checkChainOrder it matches names, not
-// signatures. A redacted or unparseable bundle leaves nothing to match against
-// and gets no assertion; checkTrustBundle reports the latter.
-func checkChainComplete(r *report.Report, chain []*x509.Certificate, own trustBundle) {
-	ownAnchors := anchors([]trustBundle{own})
+// trust anchor": the last chain certificate must be issued by an anchor in
+// bundles. Like checkChainOrder it matches names, not signatures. When every
+// bundle is redacted or unparseable there is nothing to match against and no
+// assertion is made; checkTrustBundle reports the unparseable ones.
+func checkChainComplete(r *report.Report, chain []*x509.Certificate, bundles []trustBundle, where string) {
+	ownAnchors := anchors(bundles)
 	if len(ownAnchors) == 0 {
 		return
 	}
@@ -431,7 +467,7 @@ func checkChainComplete(r *report.Report, chain []*x509.Certificate, own trustBu
 		return
 	}
 	r.Fail(spec.FSDCredentialBundleChainComplete, annotate(CredentialBundleName,
-		fmt.Sprintf("last certificate's issuer %q is not an anchor in %s", last.Issuer, own.name)))
+		fmt.Sprintf("last certificate's issuer %q is not an anchor in %s", last.Issuer, where)))
 }
 
 // checkFileShape covers the three MUST NOTs §2.1 and §2.2 each list for their
@@ -495,12 +531,15 @@ func splitPEM(raw []byte) (blocks []*pem.Block, interBlock bool) {
 }
 
 // isSelfSigned reports whether cert is self-signed: its issuer and subject
-// match and its signature verifies against its own public key.
+// match and its signature verifies against its own public key. CheckSignature
+// rather than CheckSignatureFrom: the latter also demands that the parent be a
+// CA with keyCertSign, so a self-signed root lacking either would read as not
+// self-signed and slip past the trust anchor MUST NOT.
 func isSelfSigned(cert *x509.Certificate) bool {
 	if !bytes.Equal(cert.RawIssuer, cert.RawSubject) {
 		return false
 	}
-	return cert.CheckSignatureFrom(cert) == nil
+	return cert.CheckSignature(cert.SignatureAlgorithm, cert.RawTBSCertificate, cert.Signature) == nil
 }
 
 // annotate prefixes a detail with the file it came from, collapsing to

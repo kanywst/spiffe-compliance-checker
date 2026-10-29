@@ -436,9 +436,13 @@ func TestLeafNotSVIDWarns(t *testing.T) {
 			t.Errorf("report missing %q\n%s", want, out)
 		}
 	}
-	// With no SPIFFE ID there is no own trust domain to look up.
+	// With no SPIFFE ID there is no own trust domain to look up, but the
+	// chain is still checked against the folder's anchors.
 	if strings.Contains(out, "for the workload's own trust domain") {
 		t.Errorf("own-trust-domain clause emitted for a leaf with no SPIFFE ID\n%s", out)
+	}
+	if !strings.Contains(out, "MUST stop at the certificate preceding the trust anchor") {
+		t.Errorf("chain-complete clause not evaluated\n%s", out)
 	}
 }
 
@@ -594,5 +598,98 @@ func TestX25519KeyIsPKCS8(t *testing.T) {
 	}
 	if !strings.Contains(out, "leaf public key does not match") {
 		t.Errorf("report missing key mismatch\n%s", out)
+	}
+}
+
+// A self-signed root that is not a well-formed CA must still read as
+// self-signed; CheckSignatureFrom would refuse it as a parent.
+func TestSelfSignedRootWithoutCAFlags(t *testing.T) {
+	for name, tmpl := range map[string]*x509.Certificate{
+		"no basic constraints": {Subject: pkix.Name{CommonName: "bare-root"}},
+		"no keyCertSign": {
+			Subject: pkix.Name{CommonName: "bare-root"}, IsCA: true,
+			BasicConstraintsValid: true, KeyUsage: x509.KeyUsageDigitalSignature,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			p := newPKI(t, nil)
+			k := mustKey(t)
+			root := mustCert(t, tmpl, nil, k.Public(), k)
+			r := &report.Report{}
+			err := credentialfolder.Check(r, folder(map[string]string{
+				credName:  p.keyPEM + p.leafPEM + p.interPEM + certPEM(root),
+				trustName: p.rootPEM,
+			}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var buf strings.Builder
+			r.Write(&buf)
+			if out := buf.String(); !strings.Contains(out, "(CN=bare-root) is self-signed") {
+				t.Errorf("self-signed root not caught\n%s", out)
+			}
+		})
+	}
+}
+
+// The chain MUST is evaluated against the whole folder when the leaf's own
+// trust bundle is missing.
+func TestChainCompleteWithoutOwnBundle(t *testing.T) {
+	p := newPKI(t, nil)
+	r := &report.Report{}
+	err := credentialfolder.Check(r, folder(map[string]string{
+		credName: p.keyPEM + p.leafPEM,
+		"other.org" + credentialfolder.TrustBundleSuffix: p.rootPEM,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf strings.Builder
+	r.Write(&buf)
+	if out := buf.String(); !strings.Contains(out, "is not an anchor in this folder") {
+		t.Errorf("chain-complete not evaluated against the folder\n%s", out)
+	}
+}
+
+// A spec-named entry that cannot be read is reported against its clause, and
+// the rest of the folder is still checked.
+func TestCheckDirUnreadableSpecFiles(t *testing.T) {
+	p := newPKI(t, nil)
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, trustName), []byte(p.rootPEM), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Dangling symlink under the credential bundle's name.
+	if err := os.Symlink("gone", filepath.Join(dir, credName)); err != nil {
+		t.Fatal(err)
+	}
+	// A directory and an oversized file under trust bundle names.
+	if err := os.Mkdir(filepath.Join(dir, "dir.org"+credentialfolder.TrustBundleSuffix), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	big := make([]byte, 1<<20+1)
+	if err := os.WriteFile(filepath.Join(dir, "big.org"+credentialfolder.TrustBundleSuffix), big, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	r := &report.Report{}
+	if err := credentialfolder.CheckDir(r, dir); err != nil {
+		t.Fatalf("CheckDir: %v", err)
+	}
+	var buf strings.Builder
+	r.Write(&buf)
+	out := buf.String()
+	if !r.Failed() {
+		t.Errorf("Failed()=false, want true\n%s", out)
+	}
+	for _, want := range []string{
+		credName + ": cannot stat",
+		"dir.org.spiffe-trust-bundle.x509.pem: not a regular file",
+		"big.org.spiffe-trust-bundle.x509.pem: larger than 1048576 bytes",
+		"example.org.spiffe-trust-bundle.x509.pem: 1 certificate(s)",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("report missing %q\n%s", want, out)
+		}
 	}
 }
