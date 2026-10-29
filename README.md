@@ -8,9 +8,9 @@
 
 ![demo](./assets/demo.gif)
 
-A static compliance checker for [SPIFFE](https://spiffe.io) artifacts. Pass `scc` a SPIFFE ID, an X.509-SVID certificate, a JWT-SVID or WIT-SVID token, a trust bundle, a bundle map, a bundle endpoint configuration, or a Workload Endpoint socket address, and it tells you which MUST / MUST NOT clauses from the [SPIFFE spec](https://github.com/spiffe/spiffe/tree/main/standards) the artifact satisfies or violates. Every output line cites the source document and section so a failed check reads as a spec walkthrough.
+A static compliance checker for [SPIFFE](https://spiffe.io) artifacts. Pass `scc` a SPIFFE ID, an X.509-SVID certificate, a JWT-SVID or WIT-SVID token, a trust bundle, a bundle map, a bundle endpoint configuration, a Workload Endpoint socket address, or a credential folder written for filesystem delivery, and it tells you which MUST / MUST NOT clauses from the [SPIFFE spec](https://github.com/spiffe/spiffe/tree/main/standards) the artifact satisfies or violates. Every output line cites the source document and section so a failed check reads as a spec walkthrough.
 
-SPIFFE is the CNCF spec set that defines `spiffe://...` workload identities and the SVIDs that carry them. It backs SPIRE, Istio's mTLS layer, Cilium's mutual auth, and many in-house implementations. The spec lives across eleven markdown files in [spiffe/spiffe](https://github.com/spiffe/spiffe) and ships without an official conformance suite. `scc` covers the slice of compliance that is checkable from outside: the shape of the artifacts themselves. Runtime concerns (workload attestation, key rotation, Workload API endpoint behaviour, signature verification against a specific bundle) are out of scope.
+SPIFFE is the CNCF spec set that defines `spiffe://...` workload identities and the SVIDs that carry them. It backs SPIRE, Istio's mTLS layer, Cilium's mutual auth, and many in-house implementations. The spec lives across twelve markdown files in [spiffe/spiffe](https://github.com/spiffe/spiffe) and ships without an official conformance suite. `scc` covers the slice of compliance that is checkable from outside: the shape of the artifacts themselves. Runtime concerns (workload attestation, key rotation, Workload API endpoint behaviour, signature verification against a specific bundle) are out of scope.
 
 ## Install
 
@@ -56,6 +56,7 @@ scc bundle-map [--format text|json|sarif] <bundle-map.json>
 scc federation [--format text|json|sarif] --url <url> --profile <profile> --trust-domain <name>
                [--endpoint-spiffe-id <id>] [--endpoint-bundle <bundle.json>]
 scc workload-endpoint [--format text|json|sarif] [<socket-uri>]
+scc credential-folder [--format text|json|sarif] <dir>
 ```
 
 Each subcommand prints one line per checked clause and exits non-zero if any MUST clause fails. SHOULD violations surface as `WARN` and do not change the exit code. Colors render only when stdout is a TTY and `NO_COLOR` is unset, so the same binary is safe in scripts and CI logs.
@@ -110,8 +111,9 @@ $ echo $?
 | `SPIFFE_Trust_Domain_and_Bundle.md` §5 | bundle map: `trust_domains` presence, trust domain name validity and uniqueness, each embedded bundle, omitted `spiffe_refresh_hint` |
 | `SPIFFE_Federation.md` §5             | bundle endpoint configuration: the three required parameters, profile type, endpoint URL scheme and userinfo, per-profile parameters, bootstrap bundle |
 | `SPIFFE_Workload_Endpoint.md` §4      | `SPIFFE_ENDPOINT_SOCKET`: `unix` / `tcp` scheme, no authority and an absolute path for `unix`, IP host and port for `tcp`, no other components |
+| `SPIFFE_Filesystem_Delivery.md` §2   | credential folder: required file names, PEM block types / order / headers / inter-block data, PKCS#8 key matching the leaf, no trust anchor in the chain, trust bundle per trust domain, empty-file redaction |
 
-The MUST clauses are pulled directly from the `spiffe/spiffe` main branch at commit [`dc4e9d9`](https://github.com/spiffe/spiffe/commit/dc4e9d9) (2026-08-03).
+The MUST clauses are pulled directly from the `spiffe/spiffe` main branch at commit [`03e916d`](https://github.com/spiffe/spiffe/commit/03e916d) (2026-10-29).
 
 ### WIT-SVID
 
@@ -119,7 +121,7 @@ The [WIT-SVID](https://github.com/spiffe/spiffe/blob/main/standards/WIT-SVID.md)
 
 `scc` checks the token's shape only. The proof of possession that a WIT-SVID must always be presented with is a runtime concern and stays out of scope, as does signature verification.
 
-`WIT-SVID.md` is marked **Stability: Incubating** in `spiffe/spiffe`, meaning breaking changes are avoided but may still be made in response to implementation experience. The other specs above are marked Stable. Expect the WIT-SVID clauses to move more than the rest.
+`WIT-SVID.md` is marked **Stability: Incubating** in `spiffe/spiffe`, meaning breaking changes are avoided but may still be made in response to implementation experience. `SPIFFE_Filesystem_Delivery.md` is Incubating too; the other specs above are marked Stable. Expect the clauses of those two specs to move more than the rest.
 
 A trust bundle publishes WIT signing keys as JWK entries with `use` set to `wit-svid` (`WIT-SVID.md` §6.1), so `scc bundle` accepts that value alongside `x509-svid` and `jwt-svid`, requires a `kid` on each such entry, and checks that no two keyed entries share a `kid`.
 
@@ -178,6 +180,28 @@ What it checks:
 - `unix`: no authority, and an absolute socket path. `unix://tmp/agent.sock` — one slash short — is the classic typo: `tmp` becomes the authority, and the check says so.
 - `tcp`: the host is an IP address (a hostname such as `localhost` is not) and the port is a TCP port number. §4's own counter-example, `tcp://127.0.0.1:8000/foo`, fails because nothing but scheme, host and port may be set.
 - A `tcp` host that is neither loopback nor link-local warns. §3 forbids TCP unless the endpoint can strongly authenticate workloads by source IP, but it also allows "other strong network-level assertions" such as an SDN policy, which no address can show — so this is a warning, not a failure. `0.0.0.0` and `::` warn for a sharper reason: they are a listener's wildcard, not an address a client can dial.
+
+### Filesystem Delivery
+
+[SPIFFE Filesystem Delivery](https://github.com/spiffe/spiffe/blob/main/standards/SPIFFE_Filesystem_Delivery.md) is the alternative to the Workload API for applications that read their credentials from disk: a provisioning system writes them into a *credential folder*, as Kubernetes Pod Certificates and Cluster Trust Bundles do natively. §2 fixes the folder's shape, which is what `scc credential-folder` checks. How the application loads, refreshes and validates against those files (§3) is runtime and stays out of scope, as do the provisioning system's atomic-update and disk-hygiene SHOULDs.
+
+```bash
+scc credential-folder /var/run/secrets/spiffe
+```
+
+What it checks:
+
+- The folder holds `credential-bundle.private-key.x509.pem` and at least one `<trust-domain>.spiffe-trust-bundle.x509.pem`. Other files and subdirectories are ignored, as §2 allows, and symlinks are followed, so a Kubernetes projected volume checks the same as a plain directory. When a required file is missing, any near-miss name (such as `example.org.trust-bundle.pem`) is pointed out in the failure; it is not itself a violation, since a file outside the spec's names is just another file.
+- An empty file passes as a redaction (§2.3) and its contents are not checked. A *missing* credential bundle fails, with a pointer to §2.3's rule that redaction means leaving the file empty rather than removing it.
+- Credential bundle: a PKCS#8 `PRIVATE KEY` block first, then `CERTIFICATE` blocks only, leaf first and chained by issuer → subject. The leaf must match the private key, the chain must stop at the certificate just below an anchor in the leaf's own trust bundle, and it must not carry that anchor itself, whether that anchor is self-signed or is one of the folder's own trust bundle certificates (§2.2 lets an intermediate be an anchor).
+- Every file: no other PEM block types, no PEM headers, and nothing but whitespace between blocks. `encoding/pem` silently skips stray text and even a malformed block, so `scc` measures the gaps between blocks itself.
+- Each trust bundle holds one or more parseable `CERTIFICATE` blocks, and the `<trust-domain>` in its name passes the same `SPIFFE-ID.md` trust domain clauses as a bundle map key, because §3.2 finds a peer's bundle by that name.
+- A trust bundle exists for the leaf's own trust domain.
+- The leaf SHOULD be an X.509-SVID. Since that is only a SHOULD, the `X509-SVID.md` sweep is folded into a single warning that names the clauses the leaf breaks. For the full per-clause result, run `scc x509-svid` on the same file: it reads the first `CERTIFICATE` block.
+
+Chain order is checked by names only. Verifying signatures along the chain would be path validation, which belongs to the application.
+
+`SPIFFE_Filesystem_Delivery.md` is marked **Stability: Incubating**, like `WIT-SVID.md`.
 
 ## Related
 

@@ -8,9 +8,9 @@
 
 ![demo](./assets/demo.gif)
 
-[SPIFFE](https://spiffe.io) の artifact を静的に検証する CLI。SPIFFE ID 文字列、X.509-SVID 証明書、JWT-SVID / WIT-SVID トークン、Trust Bundle、Bundle Map、Bundle Endpoint 設定、Workload Endpoint のソケットアドレスのいずれかを `scc` に渡すと、[SPIFFE 仕様](https://github.com/spiffe/spiffe/tree/main/standards) の MUST / MUST NOT 句のうち何が満たされていて何が違反しているかを 1 行ずつ報告する。各行には仕様書名とセクション番号が付くので、落ちた assertion からそのまま仕様本文に飛んで根拠を確認できる。
+[SPIFFE](https://spiffe.io) の artifact を静的に検証する CLI。SPIFFE ID 文字列、X.509-SVID 証明書、JWT-SVID / WIT-SVID トークン、Trust Bundle、Bundle Map、Bundle Endpoint 設定、Workload Endpoint のソケットアドレス、filesystem delivery 用の credential folder のいずれかを `scc` に渡すと、[SPIFFE 仕様](https://github.com/spiffe/spiffe/tree/main/standards) の MUST / MUST NOT 句のうち何が満たされていて何が違反しているかを 1 行ずつ報告する。各行には仕様書名とセクション番号が付くので、落ちた assertion からそのまま仕様本文に飛んで根拠を確認できる。
 
-SPIFFE は CNCF の仕様セットで、`spiffe://...` 形式の workload identity とそれを運ぶ SVID を定義している。SPIRE、Istio の mTLS、Cilium の mutual auth、社内製の実装などが SPIFFE 準拠を名乗っている。仕様は [spiffe/spiffe](https://github.com/spiffe/spiffe) の 11 本の markdown に分散しているが、公式の conformance suite は存在しない。`scc` はその空白のうち「外から artifact だけ見て検証できる範囲」をカバーする。Workload attestation、鍵ローテーション、Workload API endpoint の振る舞い、特定 bundle に対する署名検証などの動的な側面はスコープ外。
+SPIFFE は CNCF の仕様セットで、`spiffe://...` 形式の workload identity とそれを運ぶ SVID を定義している。SPIRE、Istio の mTLS、Cilium の mutual auth、社内製の実装などが SPIFFE 準拠を名乗っている。仕様は [spiffe/spiffe](https://github.com/spiffe/spiffe) の 12 本の markdown に分散しているが、公式の conformance suite は存在しない。`scc` はその空白のうち「外から artifact だけ見て検証できる範囲」をカバーする。Workload attestation、鍵ローテーション、Workload API endpoint の振る舞い、特定 bundle に対する署名検証などの動的な側面はスコープ外。
 
 ## インストール
 
@@ -56,6 +56,7 @@ scc bundle-map [--format text|json|sarif] <bundle-map.json>
 scc federation [--format text|json|sarif] --url <url> --profile <profile> --trust-domain <name>
                [--endpoint-spiffe-id <id>] [--endpoint-bundle <bundle.json>]
 scc workload-endpoint [--format text|json|sarif] [<socket-uri>]
+scc credential-folder [--format text|json|sarif] <dir>
 ```
 
 各サブコマンドは assertion 1 件につき 1 行を出力する。MUST 句が 1 つでも落ちれば exit code は 1、それ以外は 0。SHOULD 違反は `WARN` として表示され exit code には影響しない。色は stdout が TTY かつ `NO_COLOR` が未設定のときだけ ON になるので、script や CI ログでも同じバイナリが安全に使える。
@@ -110,8 +111,9 @@ $ echo $?
 | `SPIFFE_Trust_Domain_and_Bundle.md` §5 | bundle map: `trust_domains` の存在、trust domain 名の妥当性と一意性、内包する各 bundle、`spiffe_refresh_hint` の省略 |
 | `SPIFFE_Federation.md` §5             | bundle endpoint 設定: 必須 3 パラメータ、profile 種別、endpoint URL の scheme と userinfo、profile 固有パラメータ、bootstrap bundle |
 | `SPIFFE_Workload_Endpoint.md` §4      | `SPIFFE_ENDPOINT_SOCKET`: `unix` / `tcp` scheme、`unix` は authority なし + 絶対パス、`tcp` は IP の host と port、それ以外の component なし |
+| `SPIFFE_Filesystem_Delivery.md` §2   | credential folder: 必須のファイル名、PEM ブロックの種別 / 順序 / ヘッダ / ブロック間データ、leaf と対応する PKCS#8 鍵、chain に trust anchor を含めない、trust domain ごとの trust bundle、空ファイルによる redaction |
 
-MUST 句は `spiffe/spiffe` main ブランチの commit [`dc4e9d9`](https://github.com/spiffe/spiffe/commit/dc4e9d9) (2026-08-03) を出典としている。
+MUST 句は `spiffe/spiffe` main ブランチの commit [`03e916d`](https://github.com/spiffe/spiffe/commit/03e916d) (2026-10-29) を出典としている。
 
 ### WIT-SVID について
 
@@ -119,7 +121,7 @@ MUST 句は `spiffe/spiffe` main ブランチの commit [`dc4e9d9`](https://gith
 
 `scc` が見るのはトークンの形だけ。WIT-SVID の提示時に必ず伴う proof of possession は runtime の話なのでスコープ外、署名検証も同様。
 
-`WIT-SVID.md` は `spiffe/spiffe` 上で **Stability: Incubating** に分類されている。破壊的変更は避けられるが、実装からのフィードバック次第では入りうる、という段階。他の 3 本は Stable。つまり WIT-SVID 関連の句は今後動く可能性が他より高い。
+`WIT-SVID.md` は `spiffe/spiffe` 上で **Stability: Incubating** に分類されている。破壊的変更は避けられるが、実装からのフィードバック次第では入りうる、という段階。`SPIFFE_Filesystem_Delivery.md` も Incubating で、それ以外は Stable。つまりこの 2 本の句は今後動く可能性が他より高い。
 
 trust bundle 側では WIT の署名鍵が `use` を `wit-svid` にした JWK entry として公開される (`WIT-SVID.md` §6.1)。`scc bundle` は `x509-svid` / `jwt-svid` に加えてこの値を受理し、該当 entry に `kid` を要求し、鍵付き entry 間で `kid` が衝突していないかを検査する。
 
@@ -178,6 +180,28 @@ scc workload-endpoint
 - `unix`: authority を持たず、ソケットの絶対パスを持つこと。スラッシュが 1 本足りない `unix://tmp/agent.sock` は定番の typo で、`tmp` が authority 扱いになるのをそのまま報告する。
 - `tcp`: host が IP アドレス (`localhost` のようなホスト名は不可) で、port が TCP ポート番号であること。§4 自身が不正例に挙げる `tcp://127.0.0.1:8000/foo` は、scheme / host / port 以外を持てないので落ちる。
 - `tcp` の host が loopback でも link-local でもなければ WARN。§3 は送信元 IP で workload を強く認証できない限り TCP を禁じているが、SDN ポリシーのような「その他の強いネットワークレベルの保証」も認めていて、それはアドレスからは見えない。だから failure ではなく warning にしている。`0.0.0.0` / `::` はもっと直接的な理由で WARN になる: listener 側のワイルドカードで、クライアントが dial できるアドレスではない。
+
+### Filesystem Delivery について
+
+[SPIFFE Filesystem Delivery](https://github.com/spiffe/spiffe/blob/main/standards/SPIFFE_Filesystem_Delivery.md) は、Workload API の代わりにディスクから credential を読むアプリケーション向けの仕様。provisioning system が *credential folder* に書き込む形で、Kubernetes の Pod Certificates / Cluster Trust Bundles がそのまま対応している。§2 がこのフォルダの shape を決めていて、`scc credential-folder` が検査するのはそこ。アプリケーションがファイルを読み込み・更新し・検証に使う方法 (§3) は runtime の話でスコープ外。provisioning system 側の atomic な更新やディスクに残さないことに関する SHOULD も同様。
+
+```bash
+scc credential-folder /var/run/secrets/spiffe
+```
+
+チェック内容:
+
+- フォルダに `credential-bundle.private-key.x509.pem` と、1 つ以上の `<trust-domain>.spiffe-trust-bundle.x509.pem` があること。§2 が認めている通りそれ以外のファイルやサブディレクトリは無視する。symlink は辿るので、Kubernetes の projected volume も普通のディレクトリと同じように検査できる。必須ファイルがないときは、`example.org.trust-bundle.pem` のような惜しい名前のファイルを FAIL の詳細で指摘する。そのファイル自体は違反ではない。仕様の名前に当てはまらないファイルは単なる「その他のファイル」だから。
+- 空ファイルは redaction (§2.3) として PASS 扱いにし、中身は検査しない。credential bundle が *存在しない* 場合は FAIL。redaction はファイルを消すのではなく空にして示す、という §2.3 の規則も合わせて表示する。
+- credential bundle: 先頭が PKCS#8 の `PRIVATE KEY` ブロックで、残りは `CERTIFICATE` ブロックのみ。leaf が先頭で、issuer → subject で連鎖していること。leaf が秘密鍵と対応していること。chain が leaf 自身の trust bundle にある anchor の直下で止まっていること。chain が trust anchor を含まないこと。trust anchor は自己署名のものも、フォルダ内の trust bundle にある証明書も対象にする (§2.2 は intermediate を anchor にすることも認めている)。
+- 全ファイル共通: 他の PEM ブロック種別なし、PEM ヘッダなし、ブロック間に空白以外のデータなし。`encoding/pem` は余計なテキストどころか壊れたブロックまで黙って読み飛ばすので、ブロック間の隙間は `scc` が自前で測っている。
+- 各 trust bundle が parse できる `CERTIFICATE` ブロックを 1 つ以上持つこと。ファイル名の `<trust-domain>` 部分には bundle map のキーと同じ `SPIFFE-ID.md` の trust domain 句をかける。§3.2 で peer の bundle をこの名前で引くため。
+- leaf 自身の trust domain の trust bundle があること。
+- leaf は X.509-SVID であるべき (SHOULD)。SHOULD でしかないので、`X509-SVID.md` の検査結果は 1 つの WARN にまとめ、違反した句をそこに列挙する。句ごとの結果が欲しければ同じファイルに `scc x509-svid` をかければよい。最初の `CERTIFICATE` ブロックを読む。
+
+chain の順序は名前だけで確認する。chain に沿った署名検証は path validation で、アプリケーション側の仕事。
+
+`SPIFFE_Filesystem_Delivery.md` は `WIT-SVID.md` と同じく **Stability: Incubating**。
 
 ## 関連プロジェクト
 

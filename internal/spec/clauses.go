@@ -301,3 +301,75 @@ var (
 	WETCPLocalHost = Clause{"SPIFFE_Workload_Endpoint.md", "§3", SeveritySHOULD,
 		"TCP transport MUST NOT be used unless the underlying network allows the Workload Endpoint server to strongly authenticate the workload based on source IP address (e.g., over a localhost or link-local network), or other strong network-level assertions (e.g., via an SDN policy)"}
 )
+
+// SPIFFE Filesystem Delivery clauses (SPIFFE_Filesystem_Delivery.md). Marked
+// Stability: Incubating upstream, like WIT-SVID.md. The artifact is a
+// credential folder: one credential bundle plus a trust bundle per trust
+// domain, each a PEM file with a fixed name. Everything §3 says about how an
+// application loads, refreshes and validates against them is runtime and stays
+// out of scope, as do §2's SHOULDs on how the provisioning system writes and
+// protects the files.
+var (
+	// §2 lists the folder's contents declaratively ("A credential folder
+	// contains:") rather than with a MUST, but the rest of the spec is written
+	// against those two names, so a folder missing either is not a credential
+	// folder. The text quotes the spec rather than inventing a MUST. A file
+	// that is present but empty still satisfies these: §2.3 makes an empty
+	// file a deliberate redaction. §2.3 also anticipates a removed file, but
+	// only as the state it cannot tell apart from a remount ("emptiness is a
+	// stronger signal of intent than absence"); its SHOULD tells provisioning
+	// systems not to produce that state, which leaves an absent file
+	// unexplained by the spec rather than sanctioned as a redaction. The
+	// failure detail still points at §2.3.
+	FSDCredentialBundlePresent = Clause{"SPIFFE_Filesystem_Delivery.md", "§2", SeverityMUST,
+		`a credential folder contains "a single credential bundle, named credential-bundle.private-key.x509.pem"`}
+	FSDTrustBundlePresent = Clause{"SPIFFE_Filesystem_Delivery.md", "§2", SeverityMUST,
+		`a credential folder contains "one or more trust bundles, named <trust-domain>.spiffe-trust-bundle.x509.pem"`}
+	// "consists of two or more PEM blocks" is declarative too, and the
+	// Compatibility Note lets a coordinated provisioning system omit the
+	// private key — which the PRIVATE KEY MUST below still fails, as written.
+	FSDCredentialBundleBlocks = Clause{"SPIFFE_Filesystem_Delivery.md", "§2.1", SeverityMUST,
+		`the credential bundle "consists of two or more PEM blocks"`}
+	FSDCredentialBundlePrivateKey = Clause{"SPIFFE_Filesystem_Delivery.md", "§2.1", SeverityMUST,
+		"the first block MUST be of type PRIVATE KEY, and MUST contain a PKCS#8-serialized private key"}
+	FSDCredentialBundleCertificates = Clause{"SPIFFE_Filesystem_Delivery.md", "§2.1", SeverityMUST,
+		"the remaining PEM blocks MUST be of type CERTIFICATE, and contain the application's certificate chain"}
+	// Order is checked by name chaining only (each certificate's issuer is the
+	// next one's subject). Verifying signatures along the chain would be path
+	// validation, which scc leaves to the application.
+	FSDCredentialBundleChainOrder = Clause{"SPIFFE_Filesystem_Delivery.md", "§2.1", SeverityMUST,
+		"the certificate chain MUST be in leaf-to-root order"}
+	// Lowercase "must" in the spec, but stated as a hard rule: a leaf that does
+	// not match the key is unusable for TLS.
+	FSDCredentialBundleLeafKey = Clause{"SPIFFE_Filesystem_Delivery.md", "§2.1", SeverityMUST,
+		`"the leaf certificate must be issued to the public key derived from the PRIVATE KEY block"`}
+	// A SHOULD, so the X509-SVID.md MUSTs cannot be emitted individually here
+	// without making them fatal. A leaf that breaks any of them fails this one
+	// clause; `scc x509-svid` on the same file gives the full sweep.
+	FSDCredentialBundleLeafSVID = Clause{"SPIFFE_Filesystem_Delivery.md", "§2.1", SeveritySHOULD,
+		"the leaf certificate SHOULD be an X.509 SVID"}
+	// Matched by name against the anchors in the leaf's own trust domain
+	// bundle only; a chain cut short there (an intermediate missing) fails.
+	FSDCredentialBundleChainComplete = Clause{"SPIFFE_Filesystem_Delivery.md", "§2.1", SeverityMUST,
+		"the certificate chain MUST stop at the certificate preceding the trust anchor"}
+	FSDCredentialBundleNoTrustAnchor = Clause{"SPIFFE_Filesystem_Delivery.md", "§2.1", SeverityMUST,
+		`the certificate chain MUST NOT contain the trust anchor ("root certificate") of the chain`}
+	// §2.1 and §2.2 state these three identically, once per file type.
+	FSDNoOtherBlockTypes = Clause{"SPIFFE_Filesystem_Delivery.md", "§2.1 / §2.2", SeverityMUST,
+		"the file MUST NOT contain any other PEM block types"}
+	FSDNoInterBlockData = Clause{"SPIFFE_Filesystem_Delivery.md", "§2.1 / §2.2", SeverityMUST,
+		"the file MUST NOT contain any inter-block data"}
+	FSDNoPEMHeaders = Clause{"SPIFFE_Filesystem_Delivery.md", "§2.1 / §2.2", SeverityMUST,
+		"the file MUST NOT contain any PEM blocks that have PEM headers"}
+	// Only files ending in the pattern's suffix are trust bundles, so this
+	// fails on an empty <trust-domain> part; the rest of that part is checked
+	// against the SPIFFE-ID.md trust domain clauses, reused rather than
+	// restated. A near-miss name is not a trust bundle at all (§2: other files
+	// MAY be present) and is only mentioned when no trust bundle is found.
+	FSDTrustBundleName = Clause{"SPIFFE_Filesystem_Delivery.md", "§2.2", SeverityMUST,
+		`each trust bundle file MUST be named following the pattern "<trust-domain>.spiffe-trust-bundle.x509.pem"`}
+	FSDTrustBundleCertificates = Clause{"SPIFFE_Filesystem_Delivery.md", "§2.2", SeverityMUST,
+		`a trust bundle's contents "are one or more PEM CERTIFICATE blocks, each with a PKIX-serialized certificate"`}
+	FSDOwnTrustBundle = Clause{"SPIFFE_Filesystem_Delivery.md", "§2.2", SeverityMUST,
+		`the credential folder contains a trust bundle "for the workload's own trust domain"`}
+)

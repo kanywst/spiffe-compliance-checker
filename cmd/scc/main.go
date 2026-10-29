@@ -12,6 +12,7 @@ import (
 
 	"github.com/kanywst/spiffe-compliance-checker/internal/bundle"
 	"github.com/kanywst/spiffe-compliance-checker/internal/bundlemap"
+	"github.com/kanywst/spiffe-compliance-checker/internal/credentialfolder"
 	"github.com/kanywst/spiffe-compliance-checker/internal/federation"
 	"github.com/kanywst/spiffe-compliance-checker/internal/id"
 	"github.com/kanywst/spiffe-compliance-checker/internal/jwtsvid"
@@ -42,6 +43,7 @@ Usage:
                  --trust-domain <name> [--endpoint-spiffe-id <id>]
                  [--endpoint-bundle <bundle.json>]
   scc workload-endpoint [--format text|json|sarif] [<socket-uri>]
+  scc credential-folder [--format text|json|sarif] <dir>
 
 Each subcommand prints one line per checked clause. Exit code is 1 if any
 MUST clause fails, 0 otherwise. SHOULD violations are reported as WARN and
@@ -57,8 +59,14 @@ scc workload-endpoint checks a SPIFFE_ENDPOINT_SOCKET value
 SPIFFE_ENDPOINT_SOCKET environment variable, the same fallback §4 requires of
 conforming clients.
 
-WIT-SVID.md is marked Incubating in spiffe/spiffe, so its clauses may still
-change; the other specs scc checks are Stable.
+scc credential-folder checks a directory written per
+SPIFFE_Filesystem_Delivery.md §2: the credential bundle
+(credential-bundle.private-key.x509.pem) and every
+<trust-domain>.spiffe-trust-bundle.x509.pem trust bundle in it.
+
+WIT-SVID.md and SPIFFE_Filesystem_Delivery.md are marked Incubating in
+spiffe/spiffe, so their clauses may still change; the other specs scc checks
+are Stable.
 
 --format selects the output: text (default, human-readable), json (a stable
 object for automation), or sarif (SARIF 2.1.0 for GitHub Code Scanning). The
@@ -99,6 +107,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runFederation(rest, stdout, stderr)
 	case "workload-endpoint":
 		return runWorkloadEndpoint(rest, stdout, stderr)
+	case "credential-folder":
+		return runCredentialFolder(rest, stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "scc: unknown subcommand %q\n\n%s", cmd, usage)
 		return 2
@@ -304,5 +314,24 @@ func runWorkloadEndpoint(args []string, stdout, stderr io.Writer) int {
 	}
 	rep := &report.Report{Subject: "scc workload-endpoint  " + value}
 	workloadendpoint.Check(rep, value)
+	return emit(rep, *format, stdout, stderr)
+}
+
+func runCredentialFolder(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("credential-folder", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	format := addFormatFlag(fs)
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() != 1 {
+		fmt.Fprintln(stderr, "scc credential-folder: expected exactly one directory")
+		return 2
+	}
+	rep := &report.Report{Subject: "scc credential-folder  " + fs.Arg(0), Artifact: fs.Arg(0)}
+	if err := credentialfolder.CheckDir(rep, fs.Arg(0)); err != nil {
+		fmt.Fprintf(stderr, "scc credential-folder: %v\n", err)
+		return 2
+	}
 	return emit(rep, *format, stdout, stderr)
 }
