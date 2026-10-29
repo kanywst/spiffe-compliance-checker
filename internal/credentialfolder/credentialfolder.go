@@ -15,9 +15,11 @@ import (
 	"crypto"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
+	"net/url"
 	"os"
 	"slices"
 	"strings"
@@ -422,13 +424,15 @@ func checkTrustBundle(r *report.Report, tb trustBundle) {
 // domain", taken from the leaf's SPIFFE ID, and then §2.1's rule that the
 // chain stops right below a trust anchor. The trust domain is read from the
 // parsed URI's host rather than from a re-serialized string, so it is the one
-// the certificate carries; whether that ID is valid is the leaf SVID check's
-// business. When the own bundle cannot be identified or is missing, the chain
-// is matched against every anchor in the folder instead, so the chain MUST is
-// still evaluated.
+// the certificate carries. An authority with a port or userinfo has no valid
+// trust domain (SPIFFE-ID.md §2.1), so it is treated like a leaf with no
+// SPIFFE ID rather than stripped down to a host that would look one up. When
+// the own bundle cannot be identified, is missing, or holds no usable anchor,
+// the chain is matched against every anchor in the folder instead, so the
+// chain MUST is still evaluated.
 func checkOwnTrustBundle(r *report.Report, chain []*x509.Certificate, trust []trustBundle) {
 	leaf := chain[0]
-	if len(leaf.URIs) != 1 || !strings.EqualFold(leaf.URIs[0].Scheme, "spiffe") || leaf.URIs[0].Hostname() == "" {
+	if len(leaf.URIs) != 1 || !ownTrustDomainUsable(leaf.URIs[0]) {
 		// No trust domain to look up. The leaf being an SVID is only a
 		// SHOULD, already warned on, so failing the own-bundle MUST here
 		// would make that SHOULD fatal through the back door.
@@ -443,14 +447,26 @@ func checkOwnTrustBundle(r *report.Report, chain []*x509.Certificate, trust []tr
 		return
 	}
 	r.Pass(spec.FSDOwnTrustBundle, want)
+	if len(anchors(trust[i:i+1])) == 0 {
+		// Redacted or unparseable: nothing of its own to stop below.
+		checkChainComplete(r, chain, trust, "this folder")
+		return
+	}
 	checkChainComplete(r, chain, trust[i:i+1], want)
+}
+
+// ownTrustDomainUsable reports whether u's authority is a bare host that can
+// name a trust bundle file.
+func ownTrustDomainUsable(u *url.URL) bool {
+	return u.Scheme == "spiffe" && u.User == nil && u.Port() == "" && u.Hostname() != ""
 }
 
 // checkChainComplete covers "It MUST stop at the certificate preceding the
 // trust anchor": the last chain certificate must be issued by an anchor in
 // bundles. Like checkChainOrder it matches names, not signatures. When every
-// bundle is redacted or unparseable there is nothing to match against and no
-// assertion is made; checkTrustBundle reports the unparseable ones.
+// bundle in the folder is redacted or unparseable there is genuinely no input
+// left to check against, so no assertion is made; checkTrustBundle reports the
+// unparseable ones and the redactions.
 func checkChainComplete(r *report.Report, chain []*x509.Certificate, bundles []trustBundle, where string) {
 	ownAnchors := anchors(bundles)
 	if len(ownAnchors) == 0 {
@@ -531,15 +547,19 @@ func splitPEM(raw []byte) (blocks []*pem.Block, interBlock bool) {
 }
 
 // isSelfSigned reports whether cert is self-signed: its issuer and subject
-// match and its signature verifies against its own public key. CheckSignature
-// rather than CheckSignatureFrom: the latter also demands that the parent be a
-// CA with keyCertSign, so a self-signed root lacking either would read as not
-// self-signed and slip past the trust anchor MUST NOT.
+// match and its signature is not shown to be wrong. CheckSignature rather than
+// CheckSignatureFrom: the latter also demands that the parent be a CA with
+// keyCertSign, so a self-signed root lacking either would read as not
+// self-signed and slip past the trust anchor MUST NOT. For the same reason a
+// signature crypto/x509 refuses to judge (SHA-1, MD5, an algorithm it lacks)
+// counts as self-signed: an old root is still the chain's anchor.
 func isSelfSigned(cert *x509.Certificate) bool {
 	if !bytes.Equal(cert.RawIssuer, cert.RawSubject) {
 		return false
 	}
-	return cert.CheckSignature(cert.SignatureAlgorithm, cert.RawTBSCertificate, cert.Signature) == nil
+	err := cert.CheckSignature(cert.SignatureAlgorithm, cert.RawTBSCertificate, cert.Signature)
+	var insecure x509.InsecureAlgorithmError
+	return err == nil || errors.As(err, &insecure) || errors.Is(err, x509.ErrUnsupportedAlgorithm)
 }
 
 // annotate prefixes a detail with the file it came from, collapsing to

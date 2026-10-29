@@ -693,3 +693,81 @@ func TestCheckDirUnreadableSpecFiles(t *testing.T) {
 		}
 	}
 }
+
+// A leaf ID whose authority carries a port or userinfo has no valid trust
+// domain, so it must not be stripped down to a host that finds a bundle.
+func TestOwnTrustDomainRejectsPortAndUserinfo(t *testing.T) {
+	for _, raw := range []string{"spiffe://example.org:8443/wl", "spiffe://user@example.org/wl"} {
+		t.Run(raw, func(t *testing.T) {
+			p := newPKI(t, func(c *x509.Certificate) { c.URIs = []*url.URL{mustURL(t, raw)} })
+			r := &report.Report{}
+			err := credentialfolder.Check(r, folder(map[string]string{
+				credName:  p.keyPEM + p.leafPEM + p.interPEM,
+				trustName: p.rootPEM,
+			}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var buf strings.Builder
+			r.Write(&buf)
+			out := buf.String()
+			if strings.Contains(out, "for the workload's own trust domain") {
+				t.Errorf("own trust bundle looked up from %q\n%s", raw, out)
+			}
+			if !strings.Contains(out, "MUST stop at the certificate preceding the trust anchor") {
+				t.Errorf("chain-complete not evaluated\n%s", out)
+			}
+		})
+	}
+}
+
+// A redacted own trust bundle leaves the chain MUST to be judged against the
+// rest of the folder.
+func TestChainCompleteWithRedactedOwnBundle(t *testing.T) {
+	p := newPKI(t, nil)
+	r := &report.Report{}
+	err := credentialfolder.Check(r, folder(map[string]string{
+		credName:  p.keyPEM + p.leafPEM + p.interPEM,
+		trustName: "",
+		"other.org" + credentialfolder.TrustBundleSuffix: p.rootPEM,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf strings.Builder
+	r.Write(&buf)
+	out := buf.String()
+	if r.Failed() || !strings.Contains(out, "MUST stop at the certificate preceding the trust anchor") {
+		t.Errorf("want chain-complete evaluated and passing against the folder\n%s", out)
+	}
+}
+
+// A self-signed root crypto/x509 refuses to verify (SHA-1) is still the
+// chain's anchor.
+func TestSHA1SelfSignedRootIsAnchor(t *testing.T) {
+	p := newPKI(t, nil)
+	k, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := mustCert(t, &x509.Certificate{
+		Subject:               pkix.Name{CommonName: "sha1-root"},
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+		KeyUsage:              x509.KeyUsageCertSign,
+		SignatureAlgorithm:    x509.SHA1WithRSA,
+	}, nil, k.Public(), k)
+	r := &report.Report{}
+	err = credentialfolder.Check(r, folder(map[string]string{
+		credName:  p.keyPEM + p.leafPEM + p.interPEM + certPEM(root),
+		trustName: p.rootPEM,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf strings.Builder
+	r.Write(&buf)
+	if out := buf.String(); !strings.Contains(out, "(CN=sha1-root) is self-signed") {
+		t.Errorf("SHA-1 root not caught\n%s", out)
+	}
+}
