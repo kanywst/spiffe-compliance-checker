@@ -370,12 +370,16 @@ func checkX509Entry(r *report.Report, keyTag string, jwk map[string]any) {
 }
 
 // isSelfSigned reports whether cert is self-signed: its issuer and subject
-// match and its signature verifies against its own public key.
+// match and its signature verifies against its own public key. CheckSignature
+// rather than CheckSignatureFrom: the latter also demands that the parent be a
+// CA with keyCertSign, which would report a self-signed certificate lacking
+// either as not self-signed. Those flags are X509-SVID.md §4's business, not
+// this SHOULD's.
 func isSelfSigned(cert *x509.Certificate) bool {
 	if !bytes.Equal(cert.RawIssuer, cert.RawSubject) {
 		return false
 	}
-	return cert.CheckSignatureFrom(cert) == nil
+	return cert.CheckSignature(cert.SignatureAlgorithm, cert.RawTBSCertificate, cert.Signature) == nil
 }
 
 // checkKidSet enforces the "kid MUST be set" requirement that JWT-SVID.md §6.1

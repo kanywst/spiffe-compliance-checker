@@ -462,3 +462,34 @@ func TestCheck(t *testing.T) {
 		})
 	}
 }
+
+// A self-signed certificate without cA=true or keyCertSign is still
+// self-signed; CheckSignatureFrom would have refused it as its own parent and
+// warned spuriously.
+func TestSelfSignedWithoutCAFlags(t *testing.T) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := `{"spiffe_sequence": 1, "spiffe_refresh_hint": 300, "keys": [
+		{"kty": "EC", "use": "x509-svid", "x5c": ["` + base64.StdEncoding.EncodeToString(der) + `"]}]}`
+	r := &report.Report{}
+	if err := bundle.Check(r, []byte(raw)); err != nil {
+		t.Fatal(err)
+	}
+	var buf strings.Builder
+	r.Write(&buf)
+	if out := buf.String(); strings.Contains(out, "not self-signed") {
+		t.Errorf("self-signed certificate reported as not self-signed\n%s", out)
+	}
+}
