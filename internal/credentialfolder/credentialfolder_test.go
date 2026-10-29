@@ -742,8 +742,8 @@ func TestChainCompleteWithRedactedOwnBundle(t *testing.T) {
 	}
 }
 
-// A self-signed root crypto/x509 refuses to verify (SHA-1) is still the
-// chain's anchor.
+// A self-signed root with a legacy (SHA-1) signature is still the chain's
+// anchor.
 func TestSHA1SelfSignedRootIsAnchor(t *testing.T) {
 	p := newPKI(t, nil)
 	k, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -767,7 +767,35 @@ func TestSHA1SelfSignedRootIsAnchor(t *testing.T) {
 	}
 	var buf strings.Builder
 	r.Write(&buf)
-	if out := buf.String(); !strings.Contains(out, "(CN=sha1-root) is self-signed") {
+	// Whether crypto/x509 verifies SHA-1 or refuses it depends on the Go
+	// release; the root is caught as an anchor either way.
+	if out := buf.String(); !strings.Contains(out, "(CN=sha1-root) is self-") {
 		t.Errorf("SHA-1 root not caught\n%s", out)
+	}
+}
+
+// An anchor that shares the expected subject DN but a different key does not
+// complete the chain: the key identifiers disagree.
+func TestChainCompleteChecksKeyIdentifiers(t *testing.T) {
+	p := newPKI(t, nil)
+	k := mustKey(t)
+	impostor := mustCert(t, &x509.Certificate{
+		Subject:               pkix.Name{CommonName: "root"},
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+		KeyUsage:              x509.KeyUsageCertSign,
+	}, nil, k.Public(), k)
+	r := &report.Report{}
+	err := credentialfolder.Check(r, folder(map[string]string{
+		credName:  p.keyPEM + p.leafPEM + p.interPEM,
+		trustName: certPEM(impostor),
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf strings.Builder
+	r.Write(&buf)
+	if out := buf.String(); !strings.Contains(out, "is not an anchor in example.org.spiffe-trust-bundle.x509.pem") {
+		t.Errorf("same-DN impostor anchor accepted\n%s", out)
 	}
 }

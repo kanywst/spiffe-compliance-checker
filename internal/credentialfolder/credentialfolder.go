@@ -306,15 +306,16 @@ func checkChainBlocks(r *report.Report, tag string, blocks []*pem.Block, first i
 	return certs
 }
 
-// checkChainOrder checks leaf-to-root order by name chaining: each
-// certificate's issuer must be the next one's subject. Signatures are not
-// verified — that would be path validation, which is the application's job.
+// checkChainOrder checks leaf-to-root order by issuedBy: each certificate's
+// issuer must be the next one's subject, key identifiers agreeing when both
+// are present. Signatures are not verified — that would be path validation,
+// which is the application's job.
 func checkChainOrder(r *report.Report, tag string, certs []*x509.Certificate) {
 	for i := 0; i+1 < len(certs); i++ {
-		if !bytes.Equal(certs[i].RawIssuer, certs[i+1].RawSubject) {
+		if !issuedBy(certs[i], certs[i+1]) {
 			r.Fail(spec.FSDCredentialBundleChainOrder, annotate(tag,
-				fmt.Sprintf("certificate %d's issuer %q is not certificate %d's subject %q",
-					i+1, certs[i].Issuer, i+2, certs[i+1].Subject)))
+				fmt.Sprintf("certificate %d's issuer %q / authority key ID %x is not certificate %d's subject %q / key ID %x",
+					i+1, certs[i].Issuer, certs[i].AuthorityKeyId, i+2, certs[i+1].Subject, certs[i+1].SubjectKeyId)))
 			return
 		}
 	}
@@ -360,9 +361,9 @@ func checkLeafSVID(r *report.Report, tag string, leaf *x509.Certificate) {
 // the rarer intermediate-as-anchor setups §2.2 allows.
 func checkNoTrustAnchor(r *report.Report, tag string, certs []*x509.Certificate, trustAnchors []*x509.Certificate) {
 	for i, c := range certs {
-		if isSelfSigned(c) {
+		if ok, how := isSelfSigned(c); ok {
 			r.Fail(spec.FSDCredentialBundleNoTrustAnchor, annotate(tag,
-				fmt.Sprintf("certificate %d (%s) is self-signed", i+1, c.Subject)))
+				fmt.Sprintf("certificate %d (%s) %s", i+1, c.Subject, how)))
 			return
 		}
 		if slices.ContainsFunc(trustAnchors, c.Equal) {
@@ -463,7 +464,8 @@ func ownTrustDomainUsable(u *url.URL) bool {
 
 // checkChainComplete covers "It MUST stop at the certificate preceding the
 // trust anchor": the last chain certificate must be issued by an anchor in
-// bundles. Like checkChainOrder it matches names, not signatures. When every
+// bundles. Like checkChainOrder it matches names and key identifiers, not
+// signatures. When every
 // bundle in the folder is redacted or unparseable there is genuinely no input
 // left to check against, so no assertion is made; checkTrustBundle reports the
 // unparseable ones and the redactions.
@@ -473,11 +475,11 @@ func checkChainComplete(r *report.Report, chain []*x509.Certificate, bundles []t
 		return
 	}
 	last := chain[len(chain)-1]
-	if isSelfSigned(last) {
+	if ok, _ := isSelfSigned(last); ok {
 		return // the chain carries its anchor; checkNoTrustAnchor failed it
 	}
 	if slices.ContainsFunc(ownAnchors, func(a *x509.Certificate) bool {
-		return bytes.Equal(a.RawSubject, last.RawIssuer)
+		return issuedBy(last, a)
 	}) {
 		r.Pass(spec.FSDCredentialBundleChainComplete, annotate(CredentialBundleName, ""))
 		return
@@ -553,13 +555,35 @@ func splitPEM(raw []byte) (blocks []*pem.Block, interBlock bool) {
 // self-signed and slip past the trust anchor MUST NOT. For the same reason a
 // signature crypto/x509 refuses to judge (SHA-1, MD5, an algorithm it lacks)
 // counts as self-signed: an old root is still the chain's anchor.
-func isSelfSigned(cert *x509.Certificate) bool {
+// The returned description says which of the two it was, for the detail.
+func isSelfSigned(cert *x509.Certificate) (bool, string) {
 	if !bytes.Equal(cert.RawIssuer, cert.RawSubject) {
-		return false
+		return false, ""
 	}
 	err := cert.CheckSignature(cert.SignatureAlgorithm, cert.RawTBSCertificate, cert.Signature)
 	var insecure x509.InsecureAlgorithmError
-	return err == nil || errors.As(err, &insecure) || errors.Is(err, x509.ErrUnsupportedAlgorithm)
+	switch {
+	case err == nil:
+		return true, "is self-signed"
+	case errors.As(err, &insecure) || errors.Is(err, x509.ErrUnsupportedAlgorithm):
+		return true, fmt.Sprintf("is self-issued (issuer = subject; %s signature not verifiable)", cert.SignatureAlgorithm)
+	default:
+		return false, ""
+	}
+}
+
+// issuedBy reports whether c names a as its issuer: the issuer DN matches a's
+// subject and, when both certificates carry key identifiers, c's authority key
+// ID matches a's subject key ID. No signature is checked; that would be path
+// validation.
+func issuedBy(c, a *x509.Certificate) bool {
+	if !bytes.Equal(c.RawIssuer, a.RawSubject) {
+		return false
+	}
+	if len(c.AuthorityKeyId) > 0 && len(a.SubjectKeyId) > 0 {
+		return bytes.Equal(c.AuthorityKeyId, a.SubjectKeyId)
+	}
+	return true
 }
 
 // annotate prefixes a detail with the file it came from, collapsing to
