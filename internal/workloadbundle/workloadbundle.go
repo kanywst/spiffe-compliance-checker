@@ -1,13 +1,11 @@
 // Package workloadbundle checks the JWT and WIT bundles a Workload API server
 // returns from FetchJWTBundles and FetchWITBundles (SPIFFE_Workload_API.md
-// §6.2.2 and §7.2.2). Each is a plain RFC 7517 JWK Set for one trust domain.
+// §6.2.2 and §7.1). Each is a plain RFC 7517 JWK Set for one trust domain.
 package workloadbundle
 
 import (
 	"fmt"
 	"os"
-	"sort"
-	"strings"
 
 	"github.com/kanywst/spiffe-compliance-checker/internal/bundle"
 	"github.com/kanywst/spiffe-compliance-checker/internal/report"
@@ -81,8 +79,8 @@ func checkWIT(r *report.Report, set map[string]any) {
 	if !ok {
 		return
 	}
-	seen := make(map[string]int, len(keys))
-	var dupes []string
+	kids := make([]string, len(keys))
+	count := make(map[string]int, len(keys))
 	for i, jwk := range keys {
 		if jwk == nil {
 			continue
@@ -97,26 +95,22 @@ func checkWIT(r *report.Report, set map[string]any) {
 		switch {
 		case !ok:
 			r.Fail(spec.WLWITBundleKid, fmt.Sprintf("%s: kid is %T, want string", keyTag, v))
-			continue
 		case kid == "":
 			r.Fail(spec.WLWITBundleKid, keyTag+": kid is empty")
-			continue
-		}
-		r.Pass(spec.WLWITBundleKid, keyTag+": kid="+kid)
-		seen[kid]++
-		if seen[kid] == 2 {
-			dupes = append(dupes, kid)
+		default:
+			kids[i] = kid
+			count[kid]++
 		}
 	}
-	if len(seen) == 0 {
-		return
+	for i, kid := range kids {
+		switch {
+		case kid == "":
+		case count[kid] > 1:
+			r.Fail(spec.WLWITBundleKid, fmt.Sprintf("keys[%d]: kid=%s is not unique", i, kid))
+		default:
+			r.Pass(spec.WLWITBundleKid, fmt.Sprintf("keys[%d]: kid=%s", i, kid))
+		}
 	}
-	if len(dupes) > 0 {
-		sort.Strings(dupes)
-		r.Fail(spec.WLWITBundleKid, "duplicate kid(s): "+strings.Join(dupes, ", "))
-		return
-	}
-	r.Pass(spec.WLWITBundleKid, plural(len(seen), "kid")+", all distinct")
 }
 
 // checkJWKSet asserts the RFC 7517 shape both profiles share. The returned

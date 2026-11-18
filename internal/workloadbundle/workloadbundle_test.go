@@ -41,7 +41,7 @@ func TestCheck(t *testing.T) {
 			profile:        workloadbundle.WIT,
 			raw:            `{"keys": [{"kty": "EC", "kid": "k1"}, {"kty": "EC", "kid": "k1"}]}`,
 			wantFailed:     true,
-			wantContainAny: []string{"duplicate kid(s): k1"},
+			wantContainAny: []string{"keys[0]: kid=k1 is not unique", "keys[1]: kid=k1 is not unique"},
 		},
 		{
 			name:    "jwt bundle without use",
