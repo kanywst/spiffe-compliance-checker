@@ -110,7 +110,7 @@ func TestUsageListsEverySubcommand(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("--help exit = %d, want 0", code)
 	}
-	for _, sub := range []string{"id", "x509-svid", "jwt-svid", "wit-svid", "bundle", "bundle-map", "federation", "workload-endpoint", "broker-endpoint", "credential-folder"} {
+	for _, sub := range []string{"id", "x509-svid", "jwt-svid", "wit-svid", "bundle", "bundle-map", "workload-bundle", "federation", "workload-endpoint", "broker-endpoint", "credential-folder"} {
 		if !strings.Contains(stdout, "scc "+sub) {
 			t.Errorf("usage does not mention subcommand %q\n%s", sub, stdout)
 		}
@@ -161,6 +161,34 @@ func TestRunBundleMapUsageErrors(t *testing.T) {
 	broken := writeTemp(t, "map.json", `{"trust_domains":`)
 	if code, _, stderr := runCapture("bundle-map", broken); code != 2 {
 		t.Errorf("malformed map exit = %d, want 2 (stderr: %q)", code, stderr)
+	}
+}
+
+func TestRunWorkloadBundleExitCodes(t *testing.T) {
+	wit := writeTemp(t, "wit.json", `{"keys": [{"kty": "EC", "kid": "k1"}]}`)
+	if code, out, _ := runCapture("workload-bundle", "--profile", "wit", wit); code != 0 {
+		t.Errorf("compliant wit bundle exit = %d, want 0\n%s", code, out)
+	}
+	if code, out, _ := runCapture("bundle", wit); code != 1 {
+		t.Errorf("scc bundle on a workload bundle exit = %d, want 1\n%s", code, out)
+	}
+	noKid := writeTemp(t, "wit.json", `{"keys": [{"kty": "EC"}]}`)
+	if code, out, _ := runCapture("workload-bundle", "--profile", "wit", noKid); code != 1 {
+		t.Errorf("kid-less wit bundle exit = %d, want 1\n%s", code, out)
+	}
+}
+
+func TestRunWorkloadBundleUsageErrors(t *testing.T) {
+	path := writeTemp(t, "jwks.json", `{"keys": []}`)
+	if code, _, stderr := runCapture("workload-bundle", path); code != 2 {
+		t.Errorf("missing --profile exit = %d, want 2 (stderr: %q)", code, stderr)
+	}
+	if code, _, stderr := runCapture("workload-bundle", "--profile", "jwt"); code != 2 {
+		t.Errorf("no-arg exit = %d, want 2 (stderr: %q)", code, stderr)
+	}
+	broken := writeTemp(t, "jwks.json", `{"keys":`)
+	if code, _, stderr := runCapture("workload-bundle", "--profile", "jwt", broken); code != 2 {
+		t.Errorf("malformed bundle exit = %d, want 2 (stderr: %q)", code, stderr)
 	}
 }
 

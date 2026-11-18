@@ -53,6 +53,7 @@ scc jwt-svid   [--format text|json|sarif] <token>
 scc wit-svid   [--format text|json|sarif] <token>
 scc bundle     [--format text|json|sarif] <bundle.json>
 scc bundle-map [--format text|json|sarif] <bundle-map.json>
+scc workload-bundle [--format text|json|sarif] --profile jwt|wit <jwks.json>
 scc federation [--format text|json|sarif] --url <url> --profile <profile> --trust-domain <name>
                [--endpoint-spiffe-id <id>] [--endpoint-bundle <bundle.json>]
 scc workload-endpoint [--format text|json|sarif] [<socket-uri>]
@@ -111,6 +112,7 @@ $ echo $?
 | `SPIFFE_Trust_Domain_and_Bundle.md`   | JWKS shape, `kty` / `use` per key, `spiffe_sequence` / `spiffe_refresh_hint`, `x5c` for x509, bundle-wide `kid` uniqueness |
 | `SPIFFE_Trust_Domain_and_Bundle.md` §5 | bundle map: `trust_domains` presence, trust domain name validity and uniqueness, each embedded bundle, omitted `spiffe_refresh_hint` |
 | `SPIFFE_Federation.md` §5             | bundle endpoint configuration: the three required parameters, profile type, endpoint URL scheme and userinfo, per-profile parameters, bootstrap bundle |
+| `SPIFFE_Workload_API.md` §6.2.2, §7.1 | JWT / WIT bundles returned by `FetchJWTBundles` / `FetchWITBundles`: JWK Set shape, no keys of other uses in a JWT bundle, a unique `kid` on every WIT key |
 | `SPIFFE_Workload_Endpoint.md` §4      | `SPIFFE_ENDPOINT_SOCKET`: `unix` / `tcp` scheme, no authority and an absolute path for `unix`, IP host and port for `tcp`, no other components |
 | `SPIFFE_Broker_Endpoint.md` §4        | `SPIFFE_BROKER_SOCKET`: the Workload Endpoint rules, with an IP address or DNS name for the `tcp` host and no locality warning |
 | `SPIFFE_Filesystem_Delivery.md` §2   | credential folder: required file names, PEM block types / order / headers / inter-block data, PKCS#8 key matching the leaf, no trust anchor in the chain, trust bundle per trust domain, empty-file redaction |
@@ -123,9 +125,11 @@ The [WIT-SVID](https://github.com/spiffe/spiffe/blob/main/standards/WIT-SVID.md)
 
 `scc` checks the token's shape only. The proof of possession that a WIT-SVID must always be presented with is a runtime concern and stays out of scope, as does signature verification.
 
-`WIT-SVID.md` is marked **Stability: Incubating** in `spiffe/spiffe`, meaning breaking changes are avoided but may still be made in response to implementation experience. `SPIFFE_Filesystem_Delivery.md` and `SPIFFE_Broker_Endpoint.md` are Incubating too; the other specs above are marked Stable. Expect the clauses of those three specs to move more than the rest.
+`WIT-SVID.md` is marked **Stability: Incubating** in `spiffe/spiffe`, meaning breaking changes are avoided but may still be made in response to implementation experience. `SPIFFE_Filesystem_Delivery.md`, `SPIFFE_Broker_Endpoint.md` and the WIT-SVID Profile (§7) of `SPIFFE_Workload_API.md` are Incubating too; the other specs above are marked Stable. Expect those clauses to move more than the rest.
 
 A trust bundle publishes WIT signing keys as JWK entries with `use` set to `wit-svid` (`WIT-SVID.md` §6.1), so `scc bundle` accepts that value alongside `x509-svid` and `jwt-svid`, requires a `kid` on each such entry, and checks that no two keyed entries share a `kid`.
+
+The bundles a Workload API server returns from `FetchJWTBundles` and `FetchWITBundles` are plain JWK Sets, not SPIFFE bundles (SPIRE leaves out `use`). Check those with `scc workload-bundle --profile jwt|wit`.
 
 ### Bundle maps
 

@@ -186,6 +186,25 @@ var (
 		`"kid" MUST be unique across the bundle, jwt-svid and wit-svid entries alike`}
 )
 
+// Workload API bundle clauses (SPIFFE_Workload_API.md). FetchJWTBundles and
+// FetchWITBundles return plain RFC 7517 JWK Sets, not SPIFFE bundles, so "use"
+// may be absent. §7 (WIT-SVID Profile) is marked Stability: Incubating.
+var (
+	// A declarative statement; RFC 7517 §5.1 and §4.1 make "keys" and "kty"
+	// REQUIRED, so both are checked here.
+	WLJWTBundleJWKSet = Clause{"SPIFFE_Workload_API.md", "§6.2.2", SeverityMUST,
+		`the returned bundles "are encoded as a standard JWK Set as defined by RFC 7517"`}
+	WLJWTBundleNoOtherUse = Clause{"SPIFFE_Workload_API.md", "§6.2.2", SeverityMUST,
+		"the server MUST NOT include keys with other uses in the returned JWT bundles"}
+	WLWITBundleJWKSet = Clause{"SPIFFE_Workload_API.md", "§7.1 / §7.2.2", SeverityMUST,
+		`bundles "are encoded in JWK Set (RFC 7517) format"`}
+	// §7.2.2 repeats the §7.1 requirement in lower case.
+	WLWITBundleKidPresent = Clause{"SPIFFE_Workload_API.md", "§7.1 / §7.2.2", SeverityMUST,
+		`each JWK MUST specify the "kid" member`}
+	WLWITBundleKidUnique = Clause{"SPIFFE_Workload_API.md", "§7.1 / §7.2.2", SeverityMUST,
+		`"kid" MUST be a unique identifier for the key`}
+)
+
 // SPIFFE Bundle Map clauses (SPIFFE_Trust_Domain_and_Bundle.md §5). A bundle
 // map is a collection of bundles keyed by trust domain name. §5.1.1 defers to
 // SPIFFE-ID.md §2 for what makes a name valid, so the SPIFFE-ID trust domain
