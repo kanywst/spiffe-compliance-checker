@@ -68,10 +68,10 @@ func checkJWT(r *report.Report, set map[string]any) {
 		switch {
 		case !ok:
 			r.Fail(spec.WLJWTBundleNoOtherUse, fmt.Sprintf("%s: use is %T, want string", keyTag, v))
-		case use == "x509-svid", use == "wit-svid", use == "enc":
-			r.Fail(spec.WLJWTBundleNoOtherUse, keyTag+": use="+use)
-		default:
+		case use == "jwt-svid", use == "sig":
 			r.Pass(spec.WLJWTBundleNoOtherUse, keyTag+": use="+use)
+		default:
+			r.Fail(spec.WLJWTBundleNoOtherUse, fmt.Sprintf("%s: use=%q", keyTag, use))
 		}
 	}
 }
@@ -90,19 +90,19 @@ func checkWIT(r *report.Report, set map[string]any) {
 		keyTag := fmt.Sprintf("keys[%d]", i)
 		v, present := jwk["kid"]
 		if !present {
-			r.Fail(spec.WLWITBundleKidPresent, keyTag+": kid absent")
+			r.Fail(spec.WLWITBundleKid, keyTag+": kid absent")
 			continue
 		}
 		kid, ok := v.(string)
 		switch {
 		case !ok:
-			r.Fail(spec.WLWITBundleKidPresent, fmt.Sprintf("%s: kid is %T, want string", keyTag, v))
+			r.Fail(spec.WLWITBundleKid, fmt.Sprintf("%s: kid is %T, want string", keyTag, v))
 			continue
 		case kid == "":
-			r.Fail(spec.WLWITBundleKidPresent, keyTag+": kid is empty")
+			r.Fail(spec.WLWITBundleKid, keyTag+": kid is empty")
 			continue
 		}
-		r.Pass(spec.WLWITBundleKidPresent, keyTag+": kid="+kid)
+		r.Pass(spec.WLWITBundleKid, keyTag+": kid="+kid)
 		seen[kid]++
 		if seen[kid] == 2 {
 			dupes = append(dupes, kid)
@@ -113,10 +113,10 @@ func checkWIT(r *report.Report, set map[string]any) {
 	}
 	if len(dupes) > 0 {
 		sort.Strings(dupes)
-		r.Fail(spec.WLWITBundleKidUnique, "duplicate kid(s): "+strings.Join(dupes, ", "))
+		r.Fail(spec.WLWITBundleKid, "duplicate kid(s): "+strings.Join(dupes, ", "))
 		return
 	}
-	r.Pass(spec.WLWITBundleKidUnique, plural(len(seen), "kid")+", all distinct")
+	r.Pass(spec.WLWITBundleKid, plural(len(seen), "kid")+", all distinct")
 }
 
 // checkJWKSet asserts the RFC 7517 shape both profiles share. The returned

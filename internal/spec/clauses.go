@@ -190,19 +190,18 @@ var (
 // FetchWITBundles return plain RFC 7517 JWK Sets, not SPIFFE bundles, so "use"
 // may be absent. §7 (WIT-SVID Profile) is marked Stability: Incubating.
 var (
-	// A declarative statement; RFC 7517 §5.1 and §4.1 make "keys" and "kty"
-	// REQUIRED, so both are checked here.
+	// The Workload API only says the bundles are RFC 7517 JWK Sets; "keys"
+	// (§5.1) and "kty" (§4.1) are REQUIRED by the RFC.
 	WLJWTBundleJWKSet = Clause{"SPIFFE_Workload_API.md", "§6.2.2", SeverityMUST,
-		`the returned bundles "are encoded as a standard JWK Set as defined by RFC 7517"`}
+		`bundles are "a standard JWK Set as defined by RFC 7517", which requires "keys" and a "kty" on each key`}
+	// Only an absent "use", "jwt-svid", or RFC 7517's "sig" names a JWT-SVID
+	// signing key.
 	WLJWTBundleNoOtherUse = Clause{"SPIFFE_Workload_API.md", "§6.2.2", SeverityMUST,
 		"the server MUST NOT include keys with other uses in the returned JWT bundles"}
-	WLWITBundleJWKSet = Clause{"SPIFFE_Workload_API.md", "§7.1 / §7.2.2", SeverityMUST,
-		`bundles "are encoded in JWK Set (RFC 7517) format"`}
-	// §7.2.2 repeats the §7.1 requirement in lower case.
-	WLWITBundleKidPresent = Clause{"SPIFFE_Workload_API.md", "§7.1 / §7.2.2", SeverityMUST,
-		`each JWK MUST specify the "kid" member`}
-	WLWITBundleKidUnique = Clause{"SPIFFE_Workload_API.md", "§7.1 / §7.2.2", SeverityMUST,
-		`"kid" MUST be a unique identifier for the key`}
+	WLWITBundleJWKSet = Clause{"SPIFFE_Workload_API.md", "§7.1", SeverityMUST,
+		`bundles are "encoded in JWK set (RFC 7517) format", which requires "keys" and a "kty" on each key`}
+	WLWITBundleKid = Clause{"SPIFFE_Workload_API.md", "§7.1", SeverityMUST,
+		"Each JWK MUST specify the `kid` member with a unique identifier for the key"}
 )
 
 // SPIFFE Bundle Map clauses (SPIFFE_Trust_Domain_and_Bundle.md §5). A bundle

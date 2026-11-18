@@ -112,7 +112,7 @@ $ echo $?
 | `SPIFFE_Trust_Domain_and_Bundle.md`   | JWKS shape, `kty` / `use` per key, `spiffe_sequence` / `spiffe_refresh_hint`, `x5c` for x509, bundle-wide `kid` uniqueness |
 | `SPIFFE_Trust_Domain_and_Bundle.md` §5 | bundle map: `trust_domains` presence, trust domain name validity and uniqueness, each embedded bundle, omitted `spiffe_refresh_hint` |
 | `SPIFFE_Federation.md` §5             | bundle endpoint configuration: the three required parameters, profile type, endpoint URL scheme and userinfo, per-profile parameters, bootstrap bundle |
-| `SPIFFE_Workload_API.md` §6.2.2, §7.1 | JWT / WIT bundles returned by `FetchJWTBundles` / `FetchWITBundles`: JWK Set shape, no keys of other uses in a JWT bundle, a unique `kid` on every WIT key |
+| `SPIFFE_Workload_API.md` §6.2.2, §7.1 | JWT / WIT bundles returned by `FetchJWTBundles` / `FetchWITBundles`: RFC 7517 JWK Set shape, only JWT-SVID signing keys (`use` absent, `jwt-svid` or `sig`) in a JWT bundle, a unique `kid` on every WIT key |
 | `SPIFFE_Workload_Endpoint.md` §4      | `SPIFFE_ENDPOINT_SOCKET`: `unix` / `tcp` scheme, no authority and an absolute path for `unix`, IP host and port for `tcp`, no other components |
 | `SPIFFE_Broker_Endpoint.md` §4        | `SPIFFE_BROKER_SOCKET`: the Workload Endpoint rules, with an IP address or DNS name for the `tcp` host and no locality warning |
 | `SPIFFE_Filesystem_Delivery.md` §2   | credential folder: required file names, PEM block types / order / headers / inter-block data, PKCS#8 key matching the leaf, no trust anchor in the chain, trust bundle per trust domain, empty-file redaction |
