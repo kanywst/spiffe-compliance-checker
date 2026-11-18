@@ -19,6 +19,7 @@ import (
 	"github.com/kanywst/spiffe-compliance-checker/internal/jwtsvid"
 	"github.com/kanywst/spiffe-compliance-checker/internal/report"
 	"github.com/kanywst/spiffe-compliance-checker/internal/witsvid"
+	"github.com/kanywst/spiffe-compliance-checker/internal/workloadbundle"
 	"github.com/kanywst/spiffe-compliance-checker/internal/workloadendpoint"
 	"github.com/kanywst/spiffe-compliance-checker/internal/x509svid"
 )
@@ -40,6 +41,7 @@ Usage:
   scc wit-svid   [--format text|json|sarif] <token>
   scc bundle     [--format text|json|sarif] <bundle.json>
   scc bundle-map [--format text|json|sarif] <bundle-map.json>
+  scc workload-bundle [--format text|json|sarif] --profile jwt|wit <jwks.json>
   scc federation [--format text|json|sarif] --url <url> --profile <profile>
                  --trust-domain <name> [--endpoint-spiffe-id <id>]
                  [--endpoint-bundle <bundle.json>]
@@ -56,6 +58,10 @@ file: SPIFFE_Federation.md §5.1 defines the parameters a client must hold,
 not a format they are written in. --endpoint-spiffe-id and --endpoint-bundle
 are the additions the https_spiffe profile defines.
 
+scc workload-bundle checks a bundle returned by the Workload API's
+FetchJWTBundles or FetchWITBundles (SPIFFE_Workload_API.md §6.2.2, §7.1),
+which is a plain JWK Set rather than a SPIFFE bundle.
+
 scc workload-endpoint checks a SPIFFE_ENDPOINT_SOCKET value
 (SPIFFE_Workload_Endpoint.md §4). With no argument it reads the
 SPIFFE_ENDPOINT_SOCKET environment variable, the same fallback §4 requires of
@@ -67,9 +73,10 @@ SPIFFE_Filesystem_Delivery.md §2: the credential bundle
 (credential-bundle.private-key.x509.pem) and every
 <trust-domain>.spiffe-trust-bundle.x509.pem trust bundle in it.
 
-WIT-SVID.md, SPIFFE_Filesystem_Delivery.md and SPIFFE_Broker_Endpoint.md are
-marked Incubating in spiffe/spiffe, so their clauses may still change; the
-other specs scc checks are Stable.
+WIT-SVID.md, SPIFFE_Filesystem_Delivery.md, SPIFFE_Broker_Endpoint.md and
+the WIT-SVID Profile (§7) of SPIFFE_Workload_API.md are marked Incubating in
+spiffe/spiffe, so their clauses may still change; the other specs scc checks
+are Stable.
 
 --format selects the output: text (default, human-readable), json (a stable
 object for automation), or sarif (SARIF 2.1.0 for GitHub Code Scanning). The
@@ -106,6 +113,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runBundle(rest, stdout, stderr)
 	case "bundle-map":
 		return runBundleMap(rest, stdout, stderr)
+	case "workload-bundle":
+		return runWorkloadBundle(rest, stdout, stderr)
 	case "federation":
 		return runFederation(rest, stdout, stderr)
 	case "workload-endpoint":
@@ -243,6 +252,30 @@ func runBundleMap(args []string, stdout, stderr io.Writer) int {
 	rep := &report.Report{Subject: "scc bundle-map  " + fs.Arg(0), Artifact: fs.Arg(0)}
 	if err := bundlemap.CheckFile(rep, fs.Arg(0)); err != nil {
 		fmt.Fprintf(stderr, "scc bundle-map: %v\n", err)
+		return 2
+	}
+	return emit(rep, *format, stdout, stderr)
+}
+
+func runWorkloadBundle(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("workload-bundle", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	format := addFormatFlag(fs)
+	profile := fs.String("profile", "", "bundle profile: jwt or wit")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() != 1 {
+		fmt.Fprintln(stderr, "scc workload-bundle: expected exactly one bundle path")
+		return 2
+	}
+	if *profile != string(workloadbundle.JWT) && *profile != string(workloadbundle.WIT) {
+		fmt.Fprintln(stderr, "scc workload-bundle: --profile must be jwt or wit")
+		return 2
+	}
+	rep := &report.Report{Subject: "scc workload-bundle  " + fs.Arg(0), Artifact: fs.Arg(0)}
+	if err := workloadbundle.CheckFile(rep, workloadbundle.Profile(*profile), fs.Arg(0)); err != nil {
+		fmt.Fprintf(stderr, "scc workload-bundle: %v\n", err)
 		return 2
 	}
 	return emit(rep, *format, stdout, stderr)
