@@ -8,7 +8,9 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strings"
@@ -47,6 +49,9 @@ func DecodeJSON(raw []byte) (map[string]any, error) {
 	var b map[string]any
 	if err := dec.Decode(&b); err != nil {
 		return nil, err
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return nil, errors.New("unexpected data after the top-level value")
 	}
 	return b, nil
 }
