@@ -493,3 +493,18 @@ func TestSelfSignedWithoutCAFlags(t *testing.T) {
 		t.Errorf("self-signed certificate reported as not self-signed\n%s", out)
 	}
 }
+
+func TestCheckTrailingData(t *testing.T) {
+	for _, raw := range []string{
+		`{"keys": []} garbage`,
+		`{"keys": []}{"keys": []}`,
+	} {
+		err := bundle.Check(&report.Report{}, []byte(raw))
+		if err == nil {
+			t.Errorf("Check(%q) accepted trailing data", raw)
+		}
+	}
+	if err := bundle.Check(&report.Report{}, []byte("{\"keys\": []}\n")); err != nil {
+		t.Errorf("trailing newline rejected: %v", err)
+	}
+}
