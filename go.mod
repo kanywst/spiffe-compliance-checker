@@ -5,7 +5,7 @@ go 1.26.7
 toolchain go1.26.9
 
 require (
-	charm.land/lipgloss/v2 v2.1.0
+	charm.land/lipgloss/v2 v2.1.1
 	golang.org/x/term v0.48.0
 )
 
